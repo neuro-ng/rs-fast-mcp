@@ -1,7 +1,6 @@
-use rs_fast_mcp::server::builder::ServerBuilder;
 use rs_fast_mcp::mcp::types::{JsonRpcRequest, RequestId};
+use rs_fast_mcp::server::builder::ServerBuilder;
 use serde_json::json;
-
 
 #[tokio::test]
 async fn test_simple_auth_success() {
@@ -13,7 +12,7 @@ async fn test_simple_auth_success() {
     // Server has `core` field which is `FastMCPServer`.
     // In `tests/filtering_test.rs` I made `core` public.
     // So I can use `server_app.core`.
-    
+
     let req = JsonRpcRequest {
         jsonrpc: "2.0".to_string(),
         method: "ping".to_string(), // Assume ping exists or just any method
@@ -48,7 +47,11 @@ async fn test_simple_auth_failure() {
     match result {
         Err(e) => {
             let msg = e.to_string();
-            assert!(msg.contains("Unauthorized"), "Expected Unauthorized error, got: {}", msg);
+            assert!(
+                msg.contains("Unauthorized"),
+                "Expected Unauthorized error, got: {}",
+                msg
+            );
         }
         Ok(_) => panic!("Request with wrong token should fail"),
     }

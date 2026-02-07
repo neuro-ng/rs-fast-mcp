@@ -5,8 +5,8 @@ use async_trait::async_trait;
 use std::process::Stdio;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
-use tokio::sync::mpsc;
 use tokio::sync::Mutex;
+use tokio::sync::mpsc;
 use tracing::error;
 
 #[derive(Debug)]
@@ -24,7 +24,7 @@ impl StdioClientTransport {
     pub fn new() -> Self {
         let (read_tx, read_rx) = mpsc::channel(100);
         let (write_tx, mut write_rx) = mpsc::channel::<JsonRpcMessage>(100);
-        
+
         // Spawn Reader (Stdin)
         tokio::spawn(async move {
             let stdin = tokio::io::stdin();
@@ -55,8 +55,12 @@ impl StdioClientTransport {
                 if let Ok(json) = serde_json::to_string(&msg) {
                     let mut data = json.into_bytes();
                     data.push(b'\n');
-                    if stdout.write_all(&data).await.is_err() { break; }
-                    if stdout.flush().await.is_err() { break; }
+                    if stdout.write_all(&data).await.is_err() {
+                        break;
+                    }
+                    if stdout.flush().await.is_err() {
+                        break;
+                    }
                 }
             }
         });
@@ -85,8 +89,18 @@ impl StdioClientTransport {
             .spawn()
             .map_err(FastMCPError::StdIo)?;
 
-        let stdin = child.stdin.take().ok_or(FastMCPError::StdIo(std::io::Error::other("Failed to open stdin")))?;
-        let stdout = child.stdout.take().ok_or(FastMCPError::StdIo(std::io::Error::other("Failed to open stdout")))?;
+        let stdin = child
+            .stdin
+            .take()
+            .ok_or(FastMCPError::StdIo(std::io::Error::other(
+                "Failed to open stdin",
+            )))?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or(FastMCPError::StdIo(std::io::Error::other(
+                "Failed to open stdout",
+            )))?;
 
         let (read_tx, read_rx) = mpsc::channel(100);
         let (write_tx, mut write_rx) = mpsc::channel::<JsonRpcMessage>(100);
@@ -100,7 +114,7 @@ impl StdioClientTransport {
                 match reader.read_line(&mut line).await {
                     Ok(0) => break, // EOF
                     Ok(_) => {
-                         if let Ok(msg) = serde_json::from_str::<JsonRpcMessage>(&line) {
+                        if let Ok(msg) = serde_json::from_str::<JsonRpcMessage>(&line) {
                             if read_tx.send(msg).await.is_err() {
                                 break;
                             }
@@ -108,10 +122,10 @@ impl StdioClientTransport {
                             error!("Failed to parse line from child: {}", line);
                         }
                     }
-                     Err(e) => {
-                         error!("Error reading from child stdout: {}", e);
-                         break;
-                     }
+                    Err(e) => {
+                        error!("Error reading from child stdout: {}", e);
+                        break;
+                    }
                 }
             }
         });
@@ -120,16 +134,20 @@ impl StdioClientTransport {
         tokio::spawn(async move {
             let mut stdin = stdin;
             while let Some(msg) = write_rx.recv().await {
-                 if let Ok(json) = serde_json::to_string(&msg) {
+                if let Ok(json) = serde_json::to_string(&msg) {
                     let mut data = json.into_bytes();
                     data.push(b'\n');
-                    if stdin.write_all(&data).await.is_err() { break; }
-                    if stdin.flush().await.is_err() { break; }
+                    if stdin.write_all(&data).await.is_err() {
+                        break;
+                    }
+                    if stdin.flush().await.is_err() {
+                        break;
+                    }
                 }
             }
         });
-        
-        // Ensure child is cleaned up? 
+
+        // Ensure child is cleaned up?
         // We detached the IO. Child runs until EOF on stdin or we kill it.
         // We drop child handle, so it might become zombie if not awaited?
         // Tokio `Command` child doesn't detach on drop by default but also doesn't wait.
@@ -148,12 +166,16 @@ impl StdioClientTransport {
 #[async_trait]
 impl ClientTransport for StdioClientTransport {
     async fn send(&self, message: JsonRpcMessage) -> Result<(), FastMCPError> {
-        self.write_tx.send(message).await
+        self.write_tx
+            .send(message)
+            .await
             .map_err(|_| FastMCPError::new("Write channel closed".to_string()))
     }
 
     async fn receive(&self) -> Result<JsonRpcMessage, FastMCPError> {
         let mut rx = self.read_rx.lock().await;
-        rx.recv().await.ok_or(FastMCPError::new("Read channel closed".to_string()))
+        rx.recv()
+            .await
+            .ok_or(FastMCPError::new("Read channel closed".to_string()))
     }
 }

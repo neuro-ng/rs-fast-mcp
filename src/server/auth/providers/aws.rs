@@ -1,5 +1,5 @@
-use crate::server::auth::oidc::OIDCProvider;
 use crate::error::FastMCPError;
+use crate::server::auth::oidc::OIDCProvider;
 
 pub struct AwsCognito;
 
@@ -11,11 +11,14 @@ impl AwsCognito {
     /// * `region` - The AWS Region (e.g., `us-east-1`).
     /// * `client_id` - The Cognito App Client ID.
     pub async fn create(
-        user_pool_id: &str, 
-        region: &str, 
-        client_id: &str
+        user_pool_id: &str,
+        region: &str,
+        client_id: &str,
     ) -> Result<OIDCProvider, FastMCPError> {
-        let issuer_url = format!("https://cognito-idp.{}.amazonaws.com/{}", region, user_pool_id);
+        let issuer_url = format!(
+            "https://cognito-idp.{}.amazonaws.com/{}",
+            region, user_pool_id
+        );
         OIDCProvider::new(&issuer_url, client_id).await
     }
 }

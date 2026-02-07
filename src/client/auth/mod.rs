@@ -1,5 +1,5 @@
-use async_trait::async_trait;
 use crate::error::FastMCPError;
+use async_trait::async_trait;
 
 pub mod bearer;
 pub mod oauth;

@@ -1,9 +1,9 @@
-use std::time::Instant;
-use std::sync::{Arc, Mutex};
-use dashmap::DashMap;
-use crate::server::middleware::{Middleware, Next, BoxFuture};
-use crate::mcp::types::{JsonRpcRequest, JsonRpcResponse};
 use crate::error::FastMCPError;
+use crate::mcp::types::{JsonRpcRequest, JsonRpcResponse};
+use crate::server::middleware::{BoxFuture, Middleware, Next};
+use dashmap::DashMap;
+use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 #[derive(Debug, Clone)]
 struct TokenBucket {
@@ -26,11 +26,11 @@ impl TokenBucket {
     fn consume(&mut self, amount: f64) -> bool {
         let now = Instant::now();
         let elapsed = now.duration_since(self.last_refill).as_secs_f64();
-        
+
         // Refill, but don't exceed capacity
         self.tokens = (self.tokens + elapsed * self.refill_rate).min(self.capacity);
         self.last_refill = now;
-        
+
         if self.tokens >= amount {
             self.tokens -= amount;
             true
@@ -38,7 +38,7 @@ impl TokenBucket {
             false
         }
     }
-    
+
     fn retry_after(&self) -> f64 {
         if self.tokens >= 1.0 {
             0.0
@@ -65,9 +65,9 @@ impl RateLimitMiddleware {
             get_client_id: Box::new(|_| "global".to_string()),
         }
     }
-    
+
     pub fn per_client(capacity: f64, rate: f64) -> Self {
-         Self {
+        Self {
             buckets: DashMap::new(),
             default_capacity: capacity,
             default_refill_rate: rate,
@@ -80,8 +80,9 @@ impl RateLimitMiddleware {
         }
     }
 
-    pub fn with_client_extractor<F>(mut self, extractor: F) -> Self 
-    where F: Fn(&JsonRpcRequest) -> String + Send + Sync + 'static 
+    pub fn with_client_extractor<F>(mut self, extractor: F) -> Self
+    where
+        F: Fn(&JsonRpcRequest) -> String + Send + Sync + 'static,
     {
         self.get_client_id = Box::new(extractor);
         self
@@ -99,11 +100,18 @@ impl Middleware for RateLimitMiddleware {
     {
         Box::pin(async move {
             let client_id = (self.get_client_id)(&req);
-            
+
             // Get or create bucket
-            let bucket = self.buckets.entry(client_id).or_insert_with(|| {
-                Arc::new(Mutex::new(TokenBucket::new(self.default_capacity, self.default_refill_rate)))
-            }).clone();
+            let bucket = self
+                .buckets
+                .entry(client_id)
+                .or_insert_with(|| {
+                    Arc::new(Mutex::new(TokenBucket::new(
+                        self.default_capacity,
+                        self.default_refill_rate,
+                    )))
+                })
+                .clone();
 
             let (allowed, retry_after) = {
                 let mut b = bucket.lock().unwrap();
@@ -114,7 +122,10 @@ impl Middleware for RateLimitMiddleware {
             if allowed {
                 next(req).await
             } else {
-                let msg = format!("Rate limit exceeded. Retry after {:.2} seconds", retry_after);
+                let msg = format!(
+                    "Rate limit exceeded. Retry after {:.2} seconds",
+                    retry_after
+                );
                 Err(FastMCPError::InvalidRequest(msg))
             }
         })

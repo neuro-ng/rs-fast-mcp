@@ -4,7 +4,7 @@ use serde_json::json;
 #[tokio::test]
 async fn test_resource_subscription() {
     let server = FastMCP::new("test", "1.0");
-    
+
     // Subscribe
     let req = rs_fast_mcp::mcp::types::JsonRpcRequest {
         jsonrpc: "2.0".to_string(),

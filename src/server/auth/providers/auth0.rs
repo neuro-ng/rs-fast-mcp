@@ -1,11 +1,11 @@
-use crate::server::auth::oidc::OIDCProvider;
 use crate::error::FastMCPError;
+use crate::server::auth::oidc::OIDCProvider;
 
 pub struct Auth0;
 
 impl Auth0 {
     /// Create a new Auth0 OIDC Provider.
-    /// 
+    ///
     /// # Arguments
     /// * `domain` - The Auth0 domain (e.g., `dev-xyz.us.auth0.com`).
     /// * `client_id` - The Auth0 Client ID.
@@ -16,7 +16,7 @@ impl Auth0 {
             .trim_start_matches("https://")
             .trim_start_matches("http://")
             .trim_end_matches('/');
-            
+
         let issuer_url = format!("https://{}/", clean_domain);
         OIDCProvider::new(&issuer_url, client_id).await
     }

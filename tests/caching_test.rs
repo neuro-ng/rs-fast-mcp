@@ -1,9 +1,8 @@
-use rs_fast_mcp::server::middleware::caching::CacheMiddleware;
-use rs_fast_mcp::server::middleware::Middleware;
 use rs_fast_mcp::mcp::types::{JsonRpcRequest, JsonRpcResponse, RequestId};
+use rs_fast_mcp::server::middleware::Middleware;
+use rs_fast_mcp::server::middleware::caching::CacheMiddleware;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-
 
 #[tokio::test]
 async fn test_caching_middleware() {
@@ -33,26 +32,44 @@ async fn test_caching_middleware() {
     });
 
     // 1st Request - Miss
-    let res = middleware.handle(req.clone(), Box::new({
-        let n = next_fn.clone(); 
-        move |r| n(r)
-    })).await.unwrap();
+    let res = middleware
+        .handle(
+            req.clone(),
+            Box::new({
+                let n = next_fn.clone();
+                move |r| n(r)
+            }),
+        )
+        .await
+        .unwrap();
     assert_eq!(res.result["count"], 1);
 
     // 2nd Request - Hit
-    let res = middleware.handle(req.clone(), Box::new({
-        let n = next_fn.clone(); 
-        move |r| n(r)
-    })).await.unwrap();
+    let res = middleware
+        .handle(
+            req.clone(),
+            Box::new({
+                let n = next_fn.clone();
+                move |r| n(r)
+            }),
+        )
+        .await
+        .unwrap();
     assert_eq!(res.result["count"], 1); // Should still be 1 (Cached)
-    
+
     // Wait for Expiration (1.1s)
     tokio::time::sleep(Duration::from_millis(1100)).await;
-    
+
     // 3rd Request - Miss (Expired)
-    let res = middleware.handle(req.clone(), Box::new({
-        let n = next_fn.clone(); 
-        move |r| n(r)
-    })).await.unwrap();
+    let res = middleware
+        .handle(
+            req.clone(),
+            Box::new({
+                let n = next_fn.clone();
+                move |r| n(r)
+            }),
+        )
+        .await
+        .unwrap();
     assert_eq!(res.result["count"], 2); // Should be 2 (New Execution)
 }

@@ -1,6 +1,6 @@
-use async_trait::async_trait;
 use crate::error::FastMCPError;
 use crate::mcp::types::JsonRpcMessage;
+use async_trait::async_trait;
 use std::fmt::Debug;
 
 #[async_trait]

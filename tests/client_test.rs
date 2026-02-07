@@ -1,17 +1,14 @@
-use rs_fast_mcp::client::{Client, ClientTransport};
-use rs_fast_mcp::mcp::types::{JsonRpcMessage, JsonRpcError, ErrorData};
-use rs_fast_mcp::error::FastMCPError;
 use async_trait::async_trait;
+use rs_fast_mcp::client::{Client, ClientTransport};
+use rs_fast_mcp::error::FastMCPError;
+use rs_fast_mcp::mcp::types::{ErrorData, JsonRpcError, JsonRpcMessage};
 
-use tokio::sync::Mutex;
 use std::time::Duration;
-
+use tokio::sync::Mutex;
 
 // MockTransport removed (unused)
 
-
-
-// We need interior mutability for the mock to respond to specific requests? 
+// We need interior mutability for the mock to respond to specific requests?
 // Or simpler: The mock just returns a pre-configured response when receive() is called.
 // Since send() and receive() are decoupled in the trait, receive() is called in a loop.
 // We need to coordinate: send() happens, then receive() returns something matching the ID.
@@ -32,7 +29,7 @@ impl ClientTransport for CoordinatedMockTransport {
         if let Some(msg) = rx.recv().await {
             Ok(msg)
         } else {
-             std::future::pending().await
+            std::future::pending().await
         }
     }
 }
@@ -53,14 +50,14 @@ async fn test_client_error_handling() {
             data: None,
         },
     });
-    
+
     // Spawn a task to send the error response *after* the client sends request?
     // Actually Client starts background loop immediately.
     // We can send to tx immediately.
     tx.send(err_response).await.unwrap();
 
     let result = client.request("unknown_method", None).await;
-    
+
     match result {
         Err(FastMCPError::JsonRpcError { code, message, .. }) => {
             assert_eq!(code, -32601);
@@ -74,16 +71,16 @@ async fn test_client_error_handling() {
 async fn test_client_timeout() {
     let (_tx, rx) = tokio::sync::mpsc::channel(1);
     let transport = CoordinatedMockTransport { rx: Mutex::new(rx) };
-    
+
     // Configure client with short timeout
     let client = Client::builder(Box::new(transport))
         .timeout(Duration::from_millis(100))
         .build();
 
     // Do NOT send any response.
-    
+
     let result = client.request("slow_method", None).await;
-    
+
     match result {
         Err(FastMCPError::InvalidRequest(msg)) => {
             assert_eq!(msg, "Request timed out");

@@ -105,10 +105,18 @@ pub struct Icon {
 
 // --- Content Types ---
 
-fn default_text_type() -> String { "text".to_string() }
-fn default_image_type() -> String { "image".to_string() }
-fn default_resource_type() -> String { "resource".to_string() }
-fn default_audio_type() -> String { "audio".to_string() }
+fn default_text_type() -> String {
+    "text".to_string()
+}
+fn default_image_type() -> String {
+    "image".to_string()
+}
+fn default_resource_type() -> String {
+    "resource".to_string()
+}
+fn default_audio_type() -> String {
+    "audio".to_string()
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

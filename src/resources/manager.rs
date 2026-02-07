@@ -63,7 +63,11 @@ impl ResourceManager {
     // For now, support metadata registration. Handlers need separate method or extended Resource struct?
     // FastMCP pattern: register_resource(resource, handler).
 
-    pub fn register(&self, resource: Resource, handler: Option<Arc<ResourceReadHandler>>) -> Result<(), FastMCPError> {
+    pub fn register(
+        &self,
+        resource: Resource,
+        handler: Option<Arc<ResourceReadHandler>>,
+    ) -> Result<(), FastMCPError> {
         let uri = resource.uri.clone();
         let registered = RegisteredResource {
             metadata: resource,
@@ -79,10 +83,13 @@ impl ResourceManager {
                     self.resources.insert(uri, registered);
                 }
                 DuplicateStrategy::Error => {
-                    return Err(FastMCPError::InvalidRequest(format!("Duplicate resource: {}", uri)));
+                    return Err(FastMCPError::InvalidRequest(format!(
+                        "Duplicate resource: {}",
+                        uri
+                    )));
                 }
                 DuplicateStrategy::Replace => {
-                     self.resources.insert(uri, registered);
+                    self.resources.insert(uri, registered);
                 }
                 DuplicateStrategy::Ignore => {
                     warn!("Ignoring duplicate resource registration: {}", uri);
@@ -96,24 +103,30 @@ impl ResourceManager {
         Ok(())
     }
 
-    pub fn register_template(&self, template: crate::mcp::types::ResourceTemplate, handler: Arc<ResourceReadHandler>) -> Result<(), FastMCPError> {
+    pub fn register_template(
+        &self,
+        template: crate::mcp::types::ResourceTemplate,
+        handler: Arc<ResourceReadHandler>,
+    ) -> Result<(), FastMCPError> {
         let uri_template = template.uri_template.clone();
         // Convert URI template {arg} to regex (?P<arg>.*)
         // This is a simplified implementation. Proper URI template parsing is complex.
         // Assuming simple {var} components.
-        let pattern = regex::Regex::new(r"\{([^}]+)\}").map_err(|e| FastMCPError::new(e.to_string()))?;
+        let pattern =
+            regex::Regex::new(r"\{([^}]+)\}").map_err(|e| FastMCPError::new(e.to_string()))?;
         let regex_str = pattern.replace_all(&uri_template, "(?P<$1>.*)").to_string();
         // Or should we use .*? for broader match? MCP spec isn't super specific on template syntax but likely URI Template RFC.
         // Let's stick to [^/]+ for path segments for now, or .* if it's the end?
         // Let's use [^/]+ which is safe for path segments.
-        let regex = regex::Regex::new(&format!("^{}$", regex_str)).map_err(|e| FastMCPError::new(e.to_string()))?;
+        let regex = regex::Regex::new(&format!("^{}$", regex_str))
+            .map_err(|e| FastMCPError::new(e.to_string()))?;
 
         let registered = RegisteredTemplate {
             template,
             handler,
             regex,
         };
-        
+
         // Templates are keyed by their URI template string
         self.templates.insert(uri_template.clone(), registered);
         info!("Registering resource template: {}", uri_template);
@@ -133,7 +146,9 @@ impl ResourceManager {
     }
 
     pub fn get_usage(&self, uri: &str) -> Option<usize> {
-        self.resources.get(uri).map(|r| r.read_count.load(Ordering::Relaxed))
+        self.resources
+            .get(uri)
+            .map(|r| r.read_count.load(Ordering::Relaxed))
     }
 
     pub fn remove_resource(&self, uri: &str) {
@@ -159,9 +174,10 @@ impl ResourceManager {
     }
 
     pub fn unsubscribe(&self, uri: String, session_id: Option<String>) {
-        if let Some(sid) = session_id 
-            && let Some(mut subs) = self.subscriptions.get_mut(&uri) {
-                subs.remove(&sid);
+        if let Some(sid) = session_id
+            && let Some(mut subs) = self.subscriptions.get_mut(&uri)
+        {
+            subs.remove(&sid);
         }
     }
 
@@ -176,7 +192,7 @@ impl ResourceManager {
         }
 
         let resource_entry = self.resources.get(uri);
-        
+
         if let Some(resource_entry) = resource_entry {
             // Found exact match
             resource_entry.read_count.fetch_add(1, Ordering::Relaxed);
@@ -195,40 +211,46 @@ impl ResourceManager {
 
         // Try matching templates
         for template in self.templates.iter() {
-             // ... match logic ...
+            // ... match logic ...
             if let Some(caps) = template.regex.captures(uri) {
                 // ...
-                 let mut context = context.clone();
+                let mut context = context.clone();
                 for name in template.regex.capture_names().flatten() {
                     if let Some(m) = caps.name(name) {
-                        context.arguments.insert(name.to_string(), m.as_str().to_string());
+                        context
+                            .arguments
+                            .insert(name.to_string(), m.as_str().to_string());
                     }
                 }
-                
+
                 let handler = template.handler.clone();
                 return (handler)(uri.to_string(), context).await;
             }
         }
-        
+
         // Fuzzy match on static resources
         let mut suggestion = None;
         let mut min_dist = usize::MAX;
         for entry in self.resources.iter() {
             let dist = strsim::levenshtein(uri, entry.key());
-            if dist < min_dist && dist <= 5 { // Threshold 5 (URIs are longer)
+            if dist < min_dist && dist <= 5 {
+                // Threshold 5 (URIs are longer)
                 min_dist = dist;
                 suggestion = Some(entry.key().clone());
             }
         }
 
         if let Some(s) = suggestion {
-            Err(FastMCPError::InvalidRequest(format!("Resource not found: {}. Did you mean '{}'?", uri, s)))
+            Err(FastMCPError::InvalidRequest(format!(
+                "Resource not found: {}. Did you mean '{}'?",
+                uri, s
+            )))
         } else {
-            Err(FastMCPError::InvalidRequest(format!("Resource not found: {}", uri)))
+            Err(FastMCPError::InvalidRequest(format!(
+                "Resource not found: {}",
+                uri
+            )))
         }
-
-
-
     }
 }
 

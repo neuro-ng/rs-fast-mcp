@@ -28,14 +28,17 @@ impl PromptManager {
     pub fn register(&self, prompt: Prompt) -> Result<(), FastMCPError> {
         let name = prompt.name.clone();
         if self.prompts.contains_key(&name) {
-             let strategy = *self.strategy.read().unwrap();
-             match strategy {
+            let strategy = *self.strategy.read().unwrap();
+            match strategy {
                 DuplicateStrategy::Warn => {
                     warn!("Overwriting duplicate prompt: {}", name);
                     self.prompts.insert(name, prompt);
                 }
                 DuplicateStrategy::Error => {
-                    return Err(FastMCPError::InvalidRequest(format!("Duplicate prompt: {}", name)));
+                    return Err(FastMCPError::InvalidRequest(format!(
+                        "Duplicate prompt: {}",
+                        name
+                    )));
                 }
                 DuplicateStrategy::Replace => {
                     self.prompts.insert(name, prompt);
@@ -44,7 +47,7 @@ impl PromptManager {
                     warn!("Ignoring duplicate prompt registration: {}", name);
                     return Ok(());
                 }
-             }
+            }
         } else {
             info!("Registering prompt: {}", name);
             self.prompts.insert(name, prompt);
@@ -78,12 +81,15 @@ impl PromptManager {
             .ok_or_else(|| FastMCPError::InvalidRequest(format!("Prompt not found: {}", name)))?;
 
         let args = arguments.unwrap_or_default();
-        
+
         // Validation: Check required arguments
         if let Some(defined_args) = &prompt.data.arguments {
             for arg_def in defined_args {
                 if arg_def.required.unwrap_or(false) && !args.contains_key(&arg_def.name) {
-                     return Err(FastMCPError::InvalidRequest(format!("Missing required argument: {}", arg_def.name)));
+                    return Err(FastMCPError::InvalidRequest(format!(
+                        "Missing required argument: {}",
+                        arg_def.name
+                    )));
                 }
             }
         }

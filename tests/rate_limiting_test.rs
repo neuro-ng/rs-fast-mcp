@@ -1,9 +1,9 @@
-use rs_fast_mcp::server::middleware::rate_limiting::RateLimitMiddleware;
-use rs_fast_mcp::server::middleware::Middleware;
 use rs_fast_mcp::mcp::types::{JsonRpcRequest, JsonRpcResponse, RequestId};
+use rs_fast_mcp::server::middleware::Middleware;
+use rs_fast_mcp::server::middleware::rate_limiting::RateLimitMiddleware;
+use serde_json::Value;
 use std::sync::Arc;
 use std::time::Duration;
-use serde_json::Value;
 
 #[tokio::test]
 async fn test_rate_limiting_bucket() {
@@ -16,7 +16,7 @@ async fn test_rate_limiting_bucket() {
         id: RequestId::Int(1),
         transport_metadata: None,
     };
-    
+
     // Simple mock "next" handler
     let next_fn = Arc::new(|_: JsonRpcRequest| {
         Box::pin(async {
@@ -29,24 +29,38 @@ async fn test_rate_limiting_bucket() {
     });
 
     // 1st Request (Allowed)
-    let res = middleware.handle(req.clone(), Box::new(move |r| next_fn(r))).await;
+    let res = middleware
+        .handle(req.clone(), Box::new(move |r| next_fn(r)))
+        .await;
     assert!(res.is_ok(), "First request should be allowed");
 
     // 2nd Request (Allowed)
-    let next_fn = Arc::new(|_: JsonRpcRequest| { Box::pin(async { Ok(JsonRpcResponse::new(RequestId::Int(1), Value::Null)) }) });
-    let res = middleware.handle(req.clone(), Box::new(move |r| next_fn(r))).await;
+    let next_fn = Arc::new(|_: JsonRpcRequest| {
+        Box::pin(async { Ok(JsonRpcResponse::new(RequestId::Int(1), Value::Null)) })
+    });
+    let res = middleware
+        .handle(req.clone(), Box::new(move |r| next_fn(r)))
+        .await;
     assert!(res.is_ok(), "Second request should be allowed");
 
     // 3rd Request (Denied)
-    let next_fn = Arc::new(|_: JsonRpcRequest| { Box::pin(async { Ok(JsonRpcResponse::new(RequestId::Int(1), Value::Null)) }) });
-    let res = middleware.handle(req.clone(), Box::new(move |r| next_fn(r))).await;
+    let next_fn = Arc::new(|_: JsonRpcRequest| {
+        Box::pin(async { Ok(JsonRpcResponse::new(RequestId::Int(1), Value::Null)) })
+    });
+    let res = middleware
+        .handle(req.clone(), Box::new(move |r| next_fn(r)))
+        .await;
     assert!(res.is_err(), "Third request should be denied");
-    
+
     // Wait 1.1s
     tokio::time::sleep(Duration::from_millis(1100)).await;
-    
+
     // 4th Request (Allowed)
-    let next_fn = Arc::new(|_: JsonRpcRequest| { Box::pin(async { Ok(JsonRpcResponse::new(RequestId::Int(1), Value::Null)) }) });
-    let res = middleware.handle(req.clone(), Box::new(move |r| next_fn(r))).await;
+    let next_fn = Arc::new(|_: JsonRpcRequest| {
+        Box::pin(async { Ok(JsonRpcResponse::new(RequestId::Int(1), Value::Null)) })
+    });
+    let res = middleware
+        .handle(req.clone(), Box::new(move |r| next_fn(r)))
+        .await;
     assert!(res.is_ok(), "Fourth request after sleep should be allowed");
 }

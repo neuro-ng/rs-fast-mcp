@@ -1,10 +1,10 @@
-use std::time::{Instant, Duration};
-use std::sync::{Arc, Mutex};
+use crate::error::FastMCPError;
+use crate::mcp::types::{JsonRpcRequest, JsonRpcResponse};
+use crate::server::middleware::{BoxFuture, Middleware, Next};
 use lru::LruCache;
 use std::num::NonZeroUsize;
-use crate::server::middleware::{Middleware, Next, BoxFuture};
-use crate::mcp::types::{JsonRpcRequest, JsonRpcResponse};
-use crate::error::FastMCPError;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 #[derive(Clone)]
 struct CacheEntry {
@@ -35,16 +35,24 @@ impl CacheMiddleware {
             default_ttl: Duration::from_secs(default_ttl_secs),
         }
     }
-    
+
     fn get_cache_key(req: &JsonRpcRequest) -> Option<CacheKey> {
         // Only cache specific methods? Or all?
         // OCaml caches: tools/list, resources/list, prompts/list, tools/call, resources/read, prompts/get
         // For simplicity, let's cache everything that looks like a read/call if configured?
         // But for this middleware, we might want to just cache everything passed through it,
         // expecting the user to mount it selectively or checking method names.
-        
-        let should_cache = matches!(req.method.as_str(), "tools/list" | "resources/list" | "prompts/list" | "tools/call" | "resources/read" | "prompts/get");
-        
+
+        let should_cache = matches!(
+            req.method.as_str(),
+            "tools/list"
+                | "resources/list"
+                | "prompts/list"
+                | "tools/call"
+                | "resources/read"
+                | "prompts/get"
+        );
+
         if !should_cache {
             return None;
         }
@@ -53,7 +61,7 @@ impl CacheMiddleware {
             Some(v) => v.to_string(),
             None => "null".to_string(),
         };
-        
+
         Some((req.method.clone(), params_str))
     }
 }
@@ -69,7 +77,7 @@ impl Middleware for CacheMiddleware {
     {
         Box::pin(async move {
             let key_opt = Self::get_cache_key(&req);
-            
+
             if let Some(key) = key_opt.clone() {
                 let mut cache = self.cache.lock().unwrap();
                 if let Some(entry) = cache.get(&key) {
@@ -83,11 +91,13 @@ impl Middleware for CacheMiddleware {
                     }
                 }
             }
-            
+
             // Cache miss or expired
             let result = next(req).await;
-            
-            if let Ok(resp) = &result && let Some(key) = key_opt {
+
+            if let Ok(resp) = &result
+                && let Some(key) = key_opt
+            {
                 let entry = CacheEntry {
                     response: resp.clone(),
                     created_at: Instant::now(),
@@ -95,7 +105,7 @@ impl Middleware for CacheMiddleware {
                 };
                 self.cache.lock().unwrap().put(key, entry);
             }
-            
+
             result
         })
     }

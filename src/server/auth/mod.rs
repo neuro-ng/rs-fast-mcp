@@ -3,8 +3,8 @@ use crate::mcp::types::JsonRpcRequest;
 
 use async_trait::async_trait;
 
-pub mod oidc;
 pub mod oauth;
+pub mod oidc;
 pub mod providers;
 
 /// Context information derived from authentication.
@@ -60,10 +60,13 @@ impl SimpleAuthProvider {
 #[async_trait]
 impl AuthProvider for SimpleAuthProvider {
     async fn verify(&self, request: &JsonRpcRequest) -> Result<AuthContext, FastMCPError> {
-        let token_opt = request.transport_metadata.as_ref()
+        let token_opt = request
+            .transport_metadata
+            .as_ref()
             .and_then(|metadata| {
-                 metadata.get("authorization")
-                     .or_else(|| metadata.get("Authorization"))
+                metadata
+                    .get("authorization")
+                    .or_else(|| metadata.get("Authorization"))
             })
             .and_then(|h| h.strip_prefix("Bearer "));
 
@@ -93,7 +96,9 @@ impl AuthProvider for SimpleAuthProvider {
                 scopes: vec!["admin".to_string()],
             })
         } else {
-             Err(FastMCPError::InvalidRequest("Unauthorized: Invalid or missing token".to_string()))
+            Err(FastMCPError::InvalidRequest(
+                "Unauthorized: Invalid or missing token".to_string(),
+            ))
         }
     }
 }
@@ -109,7 +114,7 @@ pub fn current_context() -> Option<AuthContext> {
     CURRENT_AUTH_CONTEXT.try_with(|ctx| ctx.clone()).ok()
 }
 
-use crate::server::middleware::{Middleware, Next, BoxFuture};
+use crate::server::middleware::{BoxFuture, Middleware, Next};
 use std::sync::Arc;
 
 pub struct AuthMiddleware {
@@ -134,7 +139,9 @@ impl Middleware for AuthMiddleware {
         Box::pin(async move {
             let auth_context = self.provider.verify(&request).await?;
             // Scope the next handler with the verified context
-            CURRENT_AUTH_CONTEXT.scope(auth_context, next(request)).await
+            CURRENT_AUTH_CONTEXT
+                .scope(auth_context, next(request))
+                .await
         })
     }
 }

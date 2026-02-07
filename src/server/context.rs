@@ -1,8 +1,8 @@
 use dashmap::DashMap;
 use serde_json::Value;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use std::collections::HashMap;
 
 /// Execution context for FastMCP
 /// Centralizes context management for tool, resource, and prompt execution.
@@ -17,7 +17,7 @@ pub struct Context {
 
     /// Ephemeral state for the current context (if long-lived) or request
     pub state: Arc<DashMap<String, Value>>,
-    
+
     /// Arguments extracted from resource templates
     pub arguments: HashMap<String, String>,
 

@@ -87,7 +87,7 @@ impl StdioTransport {
                                 }
                                 JsonRpcMessage::Notification(notif) => {
                                     if let Err(e) = handler.handle_notification(notif).await {
-                                         error!("Notification handler error: {}", e);
+                                        error!("Notification handler error: {}", e);
                                     }
                                 }
                                 _ => {
@@ -138,9 +138,10 @@ impl Transport for StdioTransport {
         info!("Starting Stdio transport");
         let stdin = tokio::io::stdin();
         let stdout = tokio::io::stdout();
-        
+
         if let Some(rx) = outbound_rx {
-            Self::run_loop_with_notifications(tokio::io::BufReader::new(stdin), stdout, handler, rx).await
+            Self::run_loop_with_notifications(tokio::io::BufReader::new(stdin), stdout, handler, rx)
+                .await
         } else {
             self.run_loop(stdin, stdout, handler).await
         }
@@ -148,7 +149,7 @@ impl Transport for StdioTransport {
 }
 
 impl StdioTransport {
-     async fn run_loop_with_notifications<R, W>(
+    async fn run_loop_with_notifications<R, W>(
         reader: R,
         mut writer: W,
         handler: Arc<dyn RequestHandler>,
@@ -159,12 +160,12 @@ impl StdioTransport {
         W: tokio::io::AsyncWrite + Unpin + Send,
     {
         let mut reader = tokio::io::BufReader::new(reader); // Double buffering if R is already BufReader, but explicitly locally usually implies raw R.
-        // Wait, typical pattern: BufReader::new(reader). 
+        // Wait, typical pattern: BufReader::new(reader).
         // If passed R is already BufReader, it wraps again.
         // To allow both, let's assume R is `AsyncRead` and we wrap it.
         // In start() above I did `BufReader::new(stdin)`.
         // Better to match `run_loop` signature where `reader` is R.
-        
+
         let mut line = String::new();
 
         loop {
@@ -240,7 +241,7 @@ impl StdioTransport {
 mod tests {
     use super::*;
     use crate::server::transport::{JsonRpcRequest, JsonRpcResponse, RequestHandler};
-    use serde_json::{json, Value};
+    use serde_json::{Value, json};
     use std::io::Cursor;
 
     struct MockHandler;
@@ -303,7 +304,9 @@ mod tests {
 
         // Spawn transport loop
         let handle = tokio::spawn(async move {
-            StdioTransport::run_loop_with_notifications(client_read, &mut output, handler, rx).await.unwrap();
+            StdioTransport::run_loop_with_notifications(client_read, &mut output, handler, rx)
+                .await
+                .unwrap();
             output
         });
 
@@ -314,19 +317,19 @@ mod tests {
             params: Some(json!({"foo": "bar"})),
         });
         tx.send(notif_msg).unwrap();
-        
+
         // Allow some time for processing
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-        
+
         // Drop client_write to signal EOF to reader
         drop(client_write);
-        
+
         // Drop sender to signal closed (though loop likely breaks on EOF first)
         drop(tx);
-        
+
         let output = handle.await.unwrap();
         let output_str = String::from_utf8(output).unwrap();
-        
+
         // Verify output contains the notification
         assert!(output_str.contains("test/method"));
         assert!(output_str.contains("jsonrpc"));

@@ -3,14 +3,16 @@ use crate::mcp::types::{JsonRpcRequest, JsonRpcResponse};
 use std::future::Future;
 use std::pin::Pin;
 
-pub mod rate_limiting;
 pub mod caching;
+pub mod rate_limiting;
 
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 // Next is a function that takes a request and returns a future of response
 // We use Box<dyn ...> to type erase the specific future/closure
-pub type Next<'a> = Box<dyn FnOnce(JsonRpcRequest) -> BoxFuture<'a, Result<JsonRpcResponse, FastMCPError>> + Send + 'a>;
+pub type Next<'a> = Box<
+    dyn FnOnce(JsonRpcRequest) -> BoxFuture<'a, Result<JsonRpcResponse, FastMCPError>> + Send + 'a,
+>;
 
 pub trait Middleware: Send + Sync + 'static {
     fn handle<'a, 'b>(
@@ -34,8 +36,9 @@ where
         &'a self,
         req: JsonRpcRequest,
         next: Next<'b>,
-    ) -> BoxFuture<'a, Result<JsonRpcResponse, FastMCPError>> 
-    where 'b: 'a 
+    ) -> BoxFuture<'a, Result<JsonRpcResponse, FastMCPError>>
+    where
+        'b: 'a,
     {
         (self)(req, next)
     }
