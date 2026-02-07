@@ -1,0 +1,86 @@
+[package]
+name = "rs-fast-mcp"
+version = "0.1.0"
+edition = "2024"
+
+
+[dependencies]
+tokio = { version = "1.0", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
+schemars = "0.8"
+uuid = { version = "1.0", features = ["v4"] }
+tracing = "0.1"
+async-trait = "0.1" 
+
+actix-web = "4"
+actix-web-lab = "0.20"
+dashmap = "5.5"
+anyhow = "1.0"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
+futures = "0.3"
+clap = { version = "4.4", features = ["derive", "env"] }
+dotenvy = "0.15"
+regex = "1.12.2"
+strsim = "0.11.1"
+openidconnect = "4.0.1"
+oauth2 = "5.0.0"
+jsonwebtoken = { version = "10.3.0", features = ["use_pem", "rust_crypto"] }
+reqwest = { version = "0.13.1", features = ["form", "json", "stream"] }
+jsonschema = "0.40.2"
+url = "2.5.8"
+lru = "0.16.3"
+eventsource-stream = "0.2.3"
+chrono = { version = "0.4", features = ["serde"] }
+base64 = "0.22.1"
+mime_guess = "2.0.5"
+
+
+[dev-dependencies]
+reqwest = { version = "0.13.1", features = ["json"] }
+
+[[example]]
+name = "atproto_server"
+path = "examples/atproto_server/main.rs"
+
+[[example]]
+name = "smart_home"
+path = "examples/smart_home/main.rs"
+
+[[test]]
+name = "integration_test"
+path = "examples/smart_home/tests/integration_test.rs"
+
+[[example]]
+name = "auth_demo"
+path = "examples/auth/auth_demo.rs"
+
+[[example]]
+name = "authkit_dcr"
+path = "examples/auth/authkit_dcr.rs"
+
+[[example]]
+name = "aws_cognito_demo"
+path = "examples/auth/aws_cognito_demo.rs"
+
+[[example]]
+name = "azure_oauth_demo"
+path = "examples/auth/azure_oauth_demo.rs"
+
+[[example]]
+name = "github_oauth_demo"
+path = "examples/auth/github_oauth_demo.rs"
+
+[[example]]
+name = "google_oauth_demo"
+path = "examples/auth/google_oauth_demo.rs"
+
+[[example]]
+name = "scalekit_oauth_demo"
+path = "examples/auth/scalekit_oauth_demo.rs"
+
+[[example]]
+name = "workos_oauth_demo"
+path = "examples/auth/workos_oauth_demo.rs"

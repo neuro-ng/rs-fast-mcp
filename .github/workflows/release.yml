@@ -1,0 +1,43 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Rust
+      uses: dtolnay/rust-toolchain@stable
+      
+    - name: Get the version
+      id: get_version
+      run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+
+    - name: Build Release
+      run: cargo build --release --verbose
+
+    - name: Create archive
+      run: |
+        mkdir -p release-artifact
+        # Copy binary to artifacts folder
+        cp target/release/rs-fast-mcp release-artifact/
+        # Create tarball
+        tar -czf rs-fast-mcp-${{ env.VERSION }}-linux-x86_64.tar.gz -C release-artifact .
+
+    - name: Release
+      uses: softprops/action-gh-release@v1
+      if: startsWith(github.ref, 'refs/tags/')
+      with:
+        files: rs-fast-mcp-${{ env.VERSION }}-linux-x86_64.tar.gz
+        generate_release_notes: true
+        name: Release ${{ env.VERSION }}

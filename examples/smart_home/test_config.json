@@ -1,0 +1,176 @@
+{
+    "lights": {
+        "1": {
+            "state": {
+                "on": true,
+                "bri": 254,
+                "hue": 10000,
+                "sat": 254,
+                "xy": [
+                    0.5,
+                    0.5
+                ],
+                "ct": 300,
+                "alert": "none",
+                "effect": "none",
+                "colormode": "hs",
+                "reachable": true
+            },
+            "type": "Extended color light",
+            "name": "Living Room 1",
+            "modelid": "LCT001",
+            "uniqueid": "00:17:88:01:00:bd:c7:b9-01",
+            "manufacturername": "Philips",
+            "swversion": "65003148"
+        },
+        "2": {
+            "state": {
+                "on": false,
+                "bri": 0,
+                "hue": 0,
+                "sat": 0,
+                "xy": [
+                    0.0,
+                    0.0
+                ],
+                "ct": 0,
+                "alert": "none",
+                "effect": "none",
+                "colormode": "hs",
+                "reachable": true
+            },
+            "type": "Extended color light",
+            "name": "Living Room 2",
+            "modelid": "LCT001",
+            "uniqueid": "00:17:88:01:00:bd:c7:b9-02",
+            "manufacturername": "Philips",
+            "swversion": "65003148"
+        },
+        "3": {
+            "state": {
+                "on": true,
+                "bri": 200,
+                "hue": 20000,
+                "sat": 200,
+                "xy": [
+                    0.4,
+                    0.4
+                ],
+                "ct": 400,
+                "alert": "none",
+                "effect": "none",
+                "colormode": "hs",
+                "reachable": true
+            },
+            "type": "Extended color light",
+            "name": "Kitchen",
+            "modelid": "LCT001",
+            "uniqueid": "00:17:88:01:00:bd:c7:b9-03",
+            "manufacturername": "Philips",
+            "swversion": "65003148"
+        }
+    },
+    "groups": {
+        "1": {
+            "name": "Living Room",
+            "lights": [
+                "1",
+                "2"
+            ],
+            "type": "Room",
+            "action": {
+                "on": true,
+                "bri": 254,
+                "hue": 10000,
+                "sat": 254,
+                "xy": [
+                    0.5,
+                    0.5
+                ],
+                "ct": 300,
+                "effect": "none",
+                "colormode": "hs"
+            }
+        },
+        "2": {
+            "name": "Kitchen",
+            "lights": [
+                "3"
+            ],
+            "type": "Room",
+            "action": {
+                "on": true,
+                "bri": 200,
+                "hue": 20000,
+                "sat": 200,
+                "xy": [
+                    0.4,
+                    0.4
+                ],
+                "ct": 400,
+                "effect": "none",
+                "colormode": "hs"
+            }
+        }
+    },
+    "scenes": {
+        "s1": {
+            "name": "Relax",
+            "lights": [
+                "1",
+                "2"
+            ],
+            "owner": "102030405060708090a0b0c0d0e0f000",
+            "recycle": false,
+            "locked": false,
+            "appdata": {},
+            "picture": "",
+            "lastupdated": "",
+            "version": 2,
+            "group": "1"
+        },
+        "s2": {
+            "name": "Cook",
+            "lights": [
+                "3"
+            ],
+            "owner": "102030405060708090a0b0c0d0e0f000",
+            "recycle": false,
+            "locked": false,
+            "appdata": {},
+            "picture": "",
+            "lastupdated": "",
+            "version": 2,
+            "group": "2"
+        }
+    },
+    "config": {
+        "name": "Philips hue",
+        "zigbeechannel": 15,
+        "mac": "00:11:22:33:44:55",
+        "dhcp": true,
+        "ipaddress": "127.0.0.1",
+        "netmask": "255.255.0.0",
+        "gateway": "127.0.0.1",
+        "proxyaddress": "none",
+        "proxyport": 0,
+        "UTC": "2026-01-25T10:20:00",
+        "localtime": "2026-01-25T10:20:00",
+        "timezone": "UTC",
+        "whitelist": {
+            "102030405060708090a0b0c0d0e0f000": {
+                "last use date": "2026-01-25T10:20:00",
+                "create date": "2026-01-25T10:20:00",
+                "name": "my_test_app"
+            }
+        },
+        "swversion": "1948086000",
+        "apiversion": "1.41.0",
+        "linkbutton": true,
+        "portalservices": false,
+        "portalconnection": "connected"
+    },
+    "schedules": {},
+    "rules": {},
+    "resourcelinks": {}
+}

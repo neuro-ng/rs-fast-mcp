@@ -1,0 +1,20 @@
+{
+    "name": "test-server",
+    "version": "1.0.0",
+    "tools": {
+        "echo": {
+            "type": "command",
+            "command": "echo",
+            "args": [
+                "Hello"
+            ]
+        }
+    },
+    "resources": {
+        "motd": {
+            "type": "text",
+            "content": "Welcome!",
+            "mimeType": "text/plain"
+        }
+    }
+}
