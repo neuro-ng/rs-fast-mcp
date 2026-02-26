@@ -5,9 +5,10 @@ use crate::server::auth::{AuthContext, AuthProvider};
 use async_trait::async_trait;
 use std::env;
 
-/// OCI (Oracle Cloud Infrastructure) Authentication Provider
-/// Wraps OIDCProvider with OCI-specific configuration.
-/// See https://docs.oracle.com/en-us/iaas/Content/Identity/home.htm
+/// OCI (Oracle Cloud Infrastructure) Authentication Provider.
+///
+/// Wraps [`OIDCProvider`] with OCI-specific configuration.
+/// See <https://docs.oracle.com/en-us/iaas/Content/Identity/home.htm>
 pub struct OCIProvider {
     inner: OIDCProvider,
     /// OCI-specific settings if needed later
@@ -19,7 +20,7 @@ impl OCIProvider {
     /// Create a new OCIProvider.
     ///
     /// # Arguments
-    /// * `issuer_url` - The OCI Identity Domain URL (e.g., https://idcs-xxx.identity.oraclecloud.com)
+    /// * `issuer_url` - The OCI Identity Domain URL (e.g., `https://idcs-xxx.identity.oraclecloud.com`)
     /// * `client_id` - The OCI App Client ID
     /// * `base_url` - The base URL of the service (used for OCI-specific flows if needed)
     pub async fn new(
@@ -27,11 +28,6 @@ impl OCIProvider {
         client_id: &str,
         base_url: &str,
     ) -> Result<Self, FastMCPError> {
-        // OCI usually requires appending /.well-known/openid-configuration if using OIDC discovery,
-        // but OIDCProvider expects the issuer URL to be the base.
-        // OIDCProvider automatically appends /.well-known/openid-configuration.
-
-        // Ensure issuer_url doesn't have trailing slash
         let issuer = issuer_url.trim_end_matches('/');
 
         let inner = OIDCProvider::new(issuer, client_id)

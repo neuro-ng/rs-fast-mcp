@@ -6,6 +6,7 @@ use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tracing::{error, info};
 
+/// Stdio-based transport for line-delimited JSON-RPC over stdin/stdout.
 pub struct StdioTransport {}
 
 impl StdioTransport {
@@ -61,9 +62,7 @@ impl StdioTransport {
                                         }
                                         Err(e) => {
                                             error!("Handler error: {}", e);
-                                            // Send generic error or detailed?
-                                            // The error type in FastMCPError might not map perfectly to JsonRpcError yet without a helper.
-                                            // For now, simpler error response.
+                                            // Send generic JSON-RPC error response.
                                             let err_resp = JsonRpcError::new(
                                                 id,
                                                 -32603, // Internal error
@@ -159,12 +158,7 @@ impl StdioTransport {
         R: tokio::io::AsyncRead + Unpin + Send,
         W: tokio::io::AsyncWrite + Unpin + Send,
     {
-        let mut reader = tokio::io::BufReader::new(reader); // Double buffering if R is already BufReader, but explicitly locally usually implies raw R.
-        // Wait, typical pattern: BufReader::new(reader).
-        // If passed R is already BufReader, it wraps again.
-        // To allow both, let's assume R is `AsyncRead` and we wrap it.
-        // In start() above I did `BufReader::new(stdin)`.
-        // Better to match `run_loop` signature where `reader` is R.
+        let mut reader = tokio::io::BufReader::new(reader);
 
         let mut line = String::new();
 

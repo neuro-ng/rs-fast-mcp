@@ -5,21 +5,28 @@ use crate::mcp::types::{
     ServerCapabilities, Tool as McpTool,
 };
 use crate::prompts::manager::PromptManager;
-use crate::prompts::prompt::Prompt; // Internal component
+use crate::prompts::prompt::Prompt;
 use crate::resources::manager::{ResourceManager, ResourceReadHandler};
 use crate::server::context::Context;
 use crate::server::middleware::{Middleware, Next};
 use crate::server::strategy::DuplicateStrategy;
 use crate::tools::manager::ToolManager;
-use crate::tools::tool::Tool; // Internal component
-use serde_json::Value; // For HashMap<String, Value> in get_prompt arg parsing
-use std::collections::HashMap; // Explicit import
+use crate::tools::tool::Tool;
+use serde_json::Value;
+use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 
+/// An async callback invoked during server startup or shutdown.
 pub type LifespanHook =
     Box<dyn Fn() -> Pin<Box<dyn Future<Output = Result<(), FastMCPError>> + Send>> + Send + Sync>;
+
+/// High-level MCP server engine.
+///
+/// `FastMCP` owns the tool, resource, and prompt managers, a middleware
+/// pipeline, lifecycle hooks, and tag-based filtering. It is cheap to
+/// [`Clone`] because every field is behind an [`Arc`].
 
 #[derive(Clone)]
 pub struct FastMCP {
@@ -47,6 +54,7 @@ impl std::fmt::Debug for FastMCP {
 }
 
 impl FastMCP {
+    /// Creates a new `FastMCP` instance with the given server name and version.
     pub fn new(name: &str, version: &str) -> Self {
         let (tx, _rx) = tokio::sync::broadcast::channel(100);
         Self {
@@ -65,12 +73,14 @@ impl FastMCP {
         }
     }
 
+    /// Returns a new broadcast receiver for server-sent notifications.
     pub fn subscribe_notifications(
         &self,
     ) -> tokio::sync::broadcast::Receiver<crate::mcp::types::JsonRpcMessage> {
         self.notification_sender.subscribe()
     }
 
+    /// Sends a JSON-RPC notification to all connected transports.
     pub fn send_notification(&self, method: &str, params: Value) -> Result<(), FastMCPError> {
         let msg = crate::mcp::types::JsonRpcMessage::Notification(
             crate::mcp::types::JsonRpcNotification {
@@ -84,10 +94,12 @@ impl FastMCP {
         Ok(())
     }
 
+    /// Sets human-readable server instructions returned during initialisation.
     pub fn set_instructions(&mut self, instructions: &str) {
         self.instructions = Some(instructions.to_string());
     }
 
+    /// Configures tag-based filtering for tools, resources, and prompts.
     pub fn set_filtering(&self, include: Vec<String>, exclude: Vec<String>) {
         {
             let mut guard = self.include_tags.lock().unwrap();
@@ -128,58 +140,15 @@ impl FastMCP {
 
     // --- Core Protocol Handling ---
 
+    /// Routes an incoming JSON-RPC request through the middleware pipeline.
     pub async fn handle_request(
         &self,
         request: JsonRpcRequest,
     ) -> Result<JsonRpcResponse, FastMCPError> {
-        let _middlewares = {
-            let guard = self.middlewares.lock().unwrap();
-            guard.clone()
-        };
-
-        // Base handler that executes the core logic
-        let _core_handler = |_req: JsonRpcRequest| {
-            let _this = self.clone(); // We need a way to pass self. but self is &FastMCP.
-            // Problem: `handle_request_core` needs `&self`.
-            // But the closure inside `Next` is `FnOnce`.
-            // We can't easily capture `&self` if it's not 'static in `BoxFuture<'a>`.
-            // Wait, middleware handle is `&'a self`.
-            // But `handle_request` is called on `&self`.
-            // We probably need to split `handle_request` into `handle_request_core` and `handle_request` (wrapper).
-            // And use `Arc<FastMCP>` or similar if we need static lifetime?
-            // Actually, `FastMCP::handle_request` takes `&self`.
-            // But `Next` returns `BoxFuture<'a, ...>`.
-            // The chain recursion is the tricky part.
-
-            // Simplified approach: Middleware chain constructs a future chain.
-            // But we have `self` available.
-
-            // Let's refactor `handle_request` to `handle_request_core` first.
-            // Then `handle_request` builds the chain.
-            // But `Next` expects `FnOnce`.
-
-            // We can clone `self` if `FastMCP` was `Arc`. But `FastMCP` holds `Arc`s. It is cheap to clone if we implemented Clone.
-            // It currently does not implement Clone.
-            // Let's implement Clone for FastMCP (it contains Arcs effectively).
-            // Wait, Mutex<Vec> is not implicitly ref-counted unless in Arc.
-            // `on_startup` is `Arc<Mutex>`. `middlewares` is `Vec<Arc>`. Vec is valid to Clone.
-            // So we can derive Clone for FastMCP.
-
-            // Actually, let's implement `handle_request_core` and use it.
-            // But we need to call it inside the closure.
-            // If we derive Clone, we can move `FastMCP` clone into the closure.
-            // But we can't edit derive macros easily here due to struct definition.
-
-            // Wait, `FastMCP` struct definition does not derive Clone.
-            // `tools` is `Arc`, `resources` is `Arc`, `prompts` is `Arc`. `on_startup` is `Arc`. `middlewares` is `Vec` (expensive to clone if long, but usually short).
-            // Let's implement Clone.
-            panic!("Use handle_request_with_middleware instead");
-        };
-
         self.handle_request_with_middleware(request).await
     }
 
-    // Split core logic
+    /// Core request dispatcher (called after middleware).
     async fn handle_request_core(
         &self,
         request: JsonRpcRequest,
@@ -234,26 +203,21 @@ impl FastMCP {
                         let tags: Vec<String> = t.tags.iter().cloned().collect();
                         self.should_include(&tags)
                     })
-                    .map(|t| {
-                        // Conversion logic: Tool -> McpTool
-                        McpTool {
-                            base_metadata: BaseMetadata {
-                                name: t.name,
-                                title: t.title,
-                            },
-                            description: t.description,
-                            input_schema: match &t.data {
-                                crate::tools::tool::ToolKind::Function(f) => f.input_schema.clone(),
-                                _ => serde_json::json!({}),
-                            },
-                            output_schema: match &t.data {
-                                crate::tools::tool::ToolKind::Function(f) => {
-                                    f.output_schema.clone()
-                                }
-                                _ => None,
-                            },
-                            icons: None,
-                        }
+                    .map(|t| McpTool {
+                        base_metadata: BaseMetadata {
+                            name: t.name,
+                            title: t.title,
+                        },
+                        description: t.description,
+                        input_schema: match &t.data {
+                            crate::tools::tool::ToolKind::Function(f) => f.input_schema.clone(),
+                            _ => serde_json::json!({}),
+                        },
+                        output_schema: match &t.data {
+                            crate::tools::tool::ToolKind::Function(f) => f.output_schema.clone(),
+                            _ => None,
+                        },
+                        icons: None,
                     })
                     .collect();
 
@@ -301,14 +265,7 @@ impl FastMCP {
                 let uri = params.get("uri").and_then(|v| v.as_str()).ok_or(
                     FastMCPError::InvalidRequest("Missing resource uri".to_string()),
                 )?;
-                // context passed manually? NO, request handler doesn't pass context implicitly yet.
-                // We use request.id/client info? Context::default() provides placeholders.
-                // We need to support session IDs.
-                // Currently Request doesn't carry session ID in FastMCP struct.
-                // But `handle_request` is stateless.
-                // We'll use a placeholder "default" session for now or extract from metadata if we had it.
-                // `FastMCP` assumes single session in current usage in stdio?
-                // Stdio: one session.
+                // Session ID is not yet carried through the request; use a placeholder.
                 let session_id = Some("default_session".to_string());
                 self.resources.subscribe(uri.to_string(), session_id);
                 Ok(JsonRpcResponse::new(id, Value::Null))
@@ -401,46 +358,52 @@ impl FastMCP {
 
     // --- Tools ---
 
-    // --- Tools ---
-
+    /// Registers a tool with the server.
+    ///
+    /// Sends a `notifications/tools/list_changed` notification to connected clients.
     pub fn add_tool(&self, tool: Tool) -> Result<(), FastMCPError> {
         self.tools.register(tool)?;
-        // Notify clients that tool list changed
         let _ = self.send_notification("notifications/tools/list_changed", serde_json::json!({}));
         Ok(())
     }
 
+    /// Sets the duplicate-tool registration strategy.
     pub fn set_tool_strategy(&self, strategy: DuplicateStrategy) {
         self.tools.set_strategy(strategy);
     }
 
+    /// Removes a registered tool by name.
     pub fn remove_tool(&self, name: &str) {
         self.tools.remove_tool(name);
-        // Notify clients
         let _ = self.send_notification("notifications/tools/list_changed", serde_json::json!({}));
     }
 
+    /// Returns all registered tools.
     pub fn list_tools(&self) -> Vec<Tool> {
         self.tools.list_tools()
     }
 
+    /// Looks up a tool by name.
     pub fn get_tool(&self, name: &str) -> Option<Tool> {
         self.tools.get_tool(name)
     }
 
+    /// Returns the number of times a tool has been called.
     pub fn get_tool_usage(&self, name: &str) -> Option<usize> {
         self.tools.get_usage(name)
     }
 
     // --- Resources ---
 
+    /// Registers a resource with an optional read handler.
+    ///
+    /// Sends a `notifications/resources/list_changed` notification to connected clients.
     pub fn add_resource(
         &self,
         resource: Resource,
         handler: Option<Arc<ResourceReadHandler>>,
     ) -> Result<(), FastMCPError> {
         self.resources.register(resource, handler)?;
-        // Notify clients that resource list changed
         let _ = self.send_notification(
             "notifications/resources/list_changed",
             serde_json::json!({}),
@@ -448,64 +411,68 @@ impl FastMCP {
         Ok(())
     }
 
+    /// Registers a URI template with a read handler for dynamic resources.
     pub fn add_resource_template(
         &self,
         template: ResourceTemplate,
         handler: Arc<ResourceReadHandler>,
     ) -> Result<(), FastMCPError> {
         self.resources.register_template(template, handler)?;
-        // Notify clients??? Templates changing implicitly changes available resources (dynamic).
-        // Spec is unclear, but list_changed usually refers to listable resources.
-        // Templates are listed in `resources/templates/list`.
-        // There isn't `notifications/resources/templates/list_changed`.
-        // But maybe `notifications/resources/list_changed` covers it if they affect `resources/list`?
-        // Typically templates don't show up in `resources/list`.
         Ok(())
     }
 
+    /// Sets the duplicate-resource registration strategy.
     pub fn set_resource_strategy(&self, strategy: DuplicateStrategy) {
         self.resources.set_strategy(strategy);
     }
 
+    /// Removes a registered resource by URI.
     pub fn remove_resource(&self, uri: &str) {
         self.resources.remove_resource(uri);
-        // Notify clients
         let _ = self.send_notification(
             "notifications/resources/list_changed",
             serde_json::json!({}),
         );
     }
 
+    /// Returns all registered resources.
     pub fn list_resources(&self) -> Vec<Resource> {
         self.resources.list_resources()
     }
 
+    /// Looks up a resource by URI.
     pub fn get_resource(&self, uri: &str) -> Option<Resource> {
         self.resources.get_resource(uri)
     }
 
+    /// Returns the number of times a resource has been read.
     pub fn get_resource_usage(&self, uri: &str) -> Option<usize> {
         self.resources.get_usage(uri)
     }
 
     // --- Prompts ---
 
+    /// Registers a prompt template with the server.
     pub fn add_prompt(&self, prompt: Prompt) -> Result<(), FastMCPError> {
         self.prompts.register(prompt)
     }
 
+    /// Sets the duplicate-prompt registration strategy.
     pub fn set_prompt_strategy(&self, strategy: DuplicateStrategy) {
         self.prompts.set_strategy(strategy);
     }
 
+    /// Removes a registered prompt by name.
     pub fn remove_prompt(&self, name: &str) {
         self.prompts.remove_prompt(name);
     }
 
+    /// Returns all registered prompts.
     pub fn list_prompts(&self) -> Vec<Prompt> {
         self.prompts.list_prompts()
     }
 
+    /// Looks up a prompt by name.
     pub fn get_prompt(&self, name: &str) -> Option<Prompt> {
         self.prompts.get_prompt(name)
     }
@@ -538,15 +505,13 @@ impl FastMCP {
         next(request).await
     }
 
-    // --- Middleware ---
-
-    // --- Middleware ---
-
+    /// Adds a middleware to the request processing pipeline.
     pub fn add_middleware<M: Middleware>(&self, middleware: M) {
         let mut guard = self.middlewares.lock().unwrap();
         guard.push(Arc::new(middleware));
     }
 
+    /// Adds a pre-wrapped `Arc<dyn Middleware>` to the pipeline.
     pub fn add_middleware_arc(&self, middleware: Arc<dyn Middleware>) {
         let mut guard = self.middlewares.lock().unwrap();
         guard.push(middleware);
@@ -554,6 +519,7 @@ impl FastMCP {
 
     // --- Lifespan Hooks ---
 
+    /// Registers a callback to run during server startup.
     pub fn add_startup_hook<F>(&self, hook: F)
     where
         F: Fn() -> Pin<Box<dyn Future<Output = Result<(), FastMCPError>> + Send>>
@@ -565,6 +531,7 @@ impl FastMCP {
         hooks.push(Box::new(hook));
     }
 
+    /// Registers a callback to run during server shutdown.
     pub fn add_shutdown_hook<F>(&self, hook: F)
     where
         F: Fn() -> Pin<Box<dyn Future<Output = Result<(), FastMCPError>> + Send>>
@@ -576,6 +543,7 @@ impl FastMCP {
         hooks.push(Box::new(hook));
     }
 
+    /// Runs all registered startup hooks in order.
     pub async fn run_startup(&self) -> Result<(), FastMCPError> {
         let futures = {
             let guard = self.on_startup.lock().unwrap();
@@ -592,6 +560,7 @@ impl FastMCP {
         Ok(())
     }
 
+    /// Runs all registered shutdown hooks in order.
     pub async fn run_shutdown(&self) -> Result<(), FastMCPError> {
         let futures = {
             let guard = self.on_shutdown.lock().unwrap();
@@ -609,29 +578,37 @@ impl FastMCP {
     }
 }
 
-// Thread-safe wrapper
+/// Thread-safe, `Arc`-wrapped [`FastMCP`] server.
+///
+/// This is the primary handle used by transports. It implements
+/// [`RequestHandler`].
 #[derive(Clone, Debug)]
 pub struct FastMCPServer(Arc<FastMCP>);
 
 impl FastMCPServer {
+    /// Creates a new server instance wrapping a [`FastMCP`] engine.
     pub fn new(name: &str, version: &str) -> Self {
         Self(Arc::new(FastMCP::new(name, version)))
     }
 
+    /// Adds a middleware to the pipeline.
     pub fn add_middleware<M: Middleware>(&self, middleware: M) {
         self.0.add_middleware(middleware)
     }
 
+    /// Adds a pre-wrapped `Arc<dyn Middleware>` to the pipeline.
     pub fn add_middleware_arc(&self, middleware: Arc<dyn Middleware>) {
         self.0.add_middleware_arc(middleware)
     }
 
+    /// Returns a broadcast receiver for server-sent notifications.
     pub fn subscribe_notifications(
         &self,
     ) -> tokio::sync::broadcast::Receiver<crate::mcp::types::JsonRpcMessage> {
         self.0.subscribe_notifications()
     }
 
+    /// Sends a notification to all connected transports.
     pub fn send_notification(
         &self,
         method: &str,
@@ -640,6 +617,7 @@ impl FastMCPServer {
         self.0.send_notification(method, params)
     }
 
+    /// Configures tag-based filtering.
     pub fn set_filtering(&self, include: Vec<String>, exclude: Vec<String>) {
         self.0.set_filtering(include, exclude);
     }
@@ -649,17 +627,22 @@ impl FastMCPServer {
         self.0.add_tool(tool)
     }
 
+    /// Sets the duplicate-tool registration strategy.
     pub fn set_tool_strategy(&self, strategy: DuplicateStrategy) {
         self.0.set_tool_strategy(strategy);
     }
+
+    /// Returns all registered tools.
     pub fn list_tools(&self) -> Vec<Tool> {
         self.0.list_tools()
     }
 
+    /// Returns the number of times a tool has been called.
     pub fn get_tool_usage(&self, name: &str) -> Option<usize> {
         self.0.get_tool_usage(name)
     }
 
+    /// Registers a resource with an optional read handler.
     pub fn add_resource(
         &self,
         resource: Resource,
@@ -668,6 +651,7 @@ impl FastMCPServer {
         self.0.add_resource(resource, handler)
     }
 
+    /// Registers a URI template with a read handler for dynamic resources.
     pub fn add_resource_template(
         &self,
         template: ResourceTemplate,
@@ -676,22 +660,27 @@ impl FastMCPServer {
         self.0.add_resource_template(template, handler)
     }
 
+    /// Sets the duplicate-resource registration strategy.
     pub fn set_resource_strategy(&self, strategy: DuplicateStrategy) {
         self.0.set_resource_strategy(strategy);
     }
 
+    /// Returns the number of times a resource has been read.
     pub fn get_resource_usage(&self, uri: &str) -> Option<usize> {
         self.0.get_resource_usage(uri)
     }
 
+    /// Registers a prompt template.
     pub fn add_prompt(&self, prompt: Prompt) -> Result<(), FastMCPError> {
         self.0.add_prompt(prompt)
     }
 
+    /// Sets the duplicate-prompt registration strategy.
     pub fn set_prompt_strategy(&self, strategy: DuplicateStrategy) {
         self.0.set_prompt_strategy(strategy);
     }
 
+    /// Registers a callback to run during server startup.
     pub fn add_startup_hook<F>(&self, hook: F)
     where
         F: Fn() -> Pin<Box<dyn Future<Output = Result<(), FastMCPError>> + Send>>
@@ -702,6 +691,7 @@ impl FastMCPServer {
         self.0.add_startup_hook(hook)
     }
 
+    /// Registers a callback to run during server shutdown.
     pub fn add_shutdown_hook<F>(&self, hook: F)
     where
         F: Fn() -> Pin<Box<dyn Future<Output = Result<(), FastMCPError>> + Send>>
@@ -712,6 +702,7 @@ impl FastMCPServer {
         self.0.add_shutdown_hook(hook)
     }
 
+    /// Routes an incoming JSON-RPC request through the middleware pipeline.
     pub async fn handle_request(
         &self,
         request: JsonRpcRequest,
@@ -719,10 +710,12 @@ impl FastMCPServer {
         self.0.handle_request(request).await
     }
 
+    /// Runs all registered startup hooks in order.
     pub async fn run_startup(&self) -> Result<(), FastMCPError> {
         self.0.run_startup().await
     }
 
+    /// Runs all registered shutdown hooks in order.
     pub async fn run_shutdown(&self) -> Result<(), FastMCPError> {
         self.0.run_shutdown().await
     }
@@ -746,17 +739,13 @@ impl RequestHandler for FastMCPServer {
     ) -> Result<(), FastMCPError> {
         match notification.method.as_str() {
             "notifications/initialized" => {
-                // Client has initialized.
-                // We might want to trigger startup hooks if not already done,
-                // but usually startup hooks run on server start.
-                // We can log this event.
                 tracing::info!("Client initialized");
             }
             "notifications/resources/updated" => {
-                tracing::info!("Resources updated notification received (ignored for now)");
+                tracing::debug!("Received resources/updated notification");
             }
             "notifications/tools/list_changed" => {
-                tracing::info!("Tools list changed notification received (ignored for now)");
+                tracing::debug!("Received tools/list_changed notification");
             }
             _ => {
                 tracing::debug!("Received unknown notification: {}", notification.method);

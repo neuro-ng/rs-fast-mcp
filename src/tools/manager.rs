@@ -12,17 +12,23 @@ use std::sync::Arc;
 use std::sync::RwLock;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+/// A tool together with its invocation counter.
 pub struct RegisteredTool {
     pub tool: Tool,
     pub call_count: Arc<AtomicUsize>,
 }
 
+/// Registry of tools: registration, lookup, schema validation, and invocation.
+///
+/// Every public method is safe to call from multiple threads; the underlying
+/// [`DashMap`] provides fine-grained locking.
 pub struct ToolManager {
     tools: DashMap<String, RegisteredTool>,
     strategy: RwLock<DuplicateStrategy>,
 }
 
 impl ToolManager {
+    /// Creates an empty manager with the default [`DuplicateStrategy`].
     pub fn new() -> Self {
         Self {
             tools: DashMap::new(),
@@ -30,10 +36,12 @@ impl ToolManager {
         }
     }
 
+    /// Changes the strategy used when a duplicate tool name is registered.
     pub fn set_strategy(&self, strategy: DuplicateStrategy) {
         *self.strategy.write().unwrap() = strategy;
     }
 
+    /// Registers a tool, compiling its input schema for validation.
     pub fn register(&self, mut tool: Tool) -> Result<(), FastMCPError> {
         let name = tool.name.clone();
 
@@ -78,10 +86,12 @@ impl ToolManager {
         Ok(())
     }
 
+    /// Looks up a tool by name.
     pub fn get_tool(&self, name: &str) -> Option<Tool> {
         self.tools.get(name).map(|t| t.tool.clone())
     }
 
+    /// Returns all registered tools.
     pub fn list_tools(&self) -> Vec<Tool> {
         let mut tools_list = Vec::new();
         for entry in self.tools.iter() {
@@ -90,16 +100,22 @@ impl ToolManager {
         tools_list
     }
 
+    /// Returns the number of times a tool has been invoked.
     pub fn get_usage(&self, name: &str) -> Option<usize> {
         self.tools
             .get(name)
             .map(|t| t.call_count.load(Ordering::Relaxed))
     }
 
+    /// Removes a tool by name.
     pub fn remove_tool(&self, name: &str) {
         self.tools.remove(name);
     }
 
+    /// Validates `arguments` against the tool's schema, then invokes the handler.
+    ///
+    /// Returns a fuzzy-match suggestion in the error message when the tool name
+    /// is not found but a close match exists.
     pub async fn call_tool(
         &self,
         name: &str,
@@ -107,13 +123,11 @@ impl ToolManager {
         context: Context,
     ) -> Result<ToolResult, FastMCPError> {
         let tool_entry = self.tools.get(name).ok_or_else(|| {
-            // Fuzzy match
             let mut suggestion = None;
             let mut min_dist = usize::MAX;
             for entry in self.tools.iter() {
                 let dist = strsim::levenshtein(name, entry.key());
                 if dist < min_dist && dist <= 3 {
-                    // Threshold 3
                     min_dist = dist;
                     suggestion = Some(entry.key().clone());
                 }
@@ -129,19 +143,16 @@ impl ToolManager {
             }
         })?;
 
-        // Increment usage
         tool_entry.call_count.fetch_add(1, Ordering::Relaxed);
 
         let tool = &tool_entry.tool;
         match &tool.data {
             ToolKind::Function(func) => {
-                // Use optimized schema if available, otherwise input_schema
                 let validation_schema = func
                     .compiled_schema
                     .as_deref()
                     .unwrap_or(&func.input_schema);
 
-                // Validate arguments against schema
                 match jsonschema::validator_for(validation_schema) {
                     Ok(schema) => {
                         if let Err(error) = schema.validate(&arguments) {

@@ -1,3 +1,11 @@
+//! Command-line interface for rs-fast-mcp.
+//!
+//! Provides the `fastmcp` binary with sub-commands for running a server,
+//! connecting as a client, inspecting remote capabilities, and launching
+//! the MCP Inspector dev tool.
+//!
+//! Built with [`clap`] for argument parsing.
+
 use clap::{Parser, Subcommand};
 
 #[derive(Parser, Debug)]

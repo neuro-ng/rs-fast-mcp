@@ -6,14 +6,16 @@ use std::collections::HashMap;
 use tracing::{info, warn};
 
 use crate::server::strategy::DuplicateStrategy;
-use std::sync::RwLock; // DashMap doesn't need external lock, but strategy is simple field. 
+use std::sync::RwLock;
 
+/// Registry of prompt templates: registration, lookup, and execution.
 pub struct PromptManager {
     prompts: DashMap<String, Prompt>,
     strategy: RwLock<DuplicateStrategy>,
 }
 
 impl PromptManager {
+    /// Creates an empty manager with the default [`DuplicateStrategy`].
     pub fn new() -> Self {
         Self {
             prompts: DashMap::new(),
@@ -21,10 +23,12 @@ impl PromptManager {
         }
     }
 
+    /// Changes the strategy used when a duplicate prompt name is registered.
     pub fn set_strategy(&self, strategy: DuplicateStrategy) {
         *self.strategy.write().unwrap() = strategy;
     }
 
+    /// Registers a prompt template.
     pub fn register(&self, prompt: Prompt) -> Result<(), FastMCPError> {
         let name = prompt.name.clone();
         if self.prompts.contains_key(&name) {
@@ -55,10 +59,12 @@ impl PromptManager {
         Ok(())
     }
 
+    /// Looks up a prompt by name.
     pub fn get_prompt(&self, name: &str) -> Option<Prompt> {
         self.prompts.get(name).map(|p| p.value().clone())
     }
 
+    /// Returns all registered prompts.
     pub fn list_prompts(&self) -> Vec<Prompt> {
         let mut list = Vec::new();
         for entry in self.prompts.iter() {
@@ -67,10 +73,13 @@ impl PromptManager {
         list
     }
 
+    /// Removes a prompt by name.
     pub fn remove_prompt(&self, name: &str) {
         self.prompts.remove(name);
     }
 
+    /// Validates required arguments, runs the handler, and returns the
+    /// prompt description together with the rendered messages.
     pub async fn get_prompt_execution(
         &self,
         name: &str,

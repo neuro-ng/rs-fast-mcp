@@ -1,3 +1,8 @@
+//! Environment-driven application settings.
+//!
+//! Use [`Settings::load`] to populate from environment variables (with optional
+//! `.env` file). All variables use the `FASTMCP_` prefix, e.g. `FASTMCP_PORT`.
+
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::env;
@@ -5,11 +10,16 @@ use std::fs;
 use std::path::Path;
 use std::str::FromStr;
 
+/// Server log level.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum LogLevel {
+    /// Verbose debug output.
     Debug,
+    /// Standard informational messages.
     Info,
+    /// Warnings only.
     Warn,
+    /// Errors only.
     Error,
 }
 
@@ -27,15 +37,37 @@ impl FromStr for LogLevel {
     }
 }
 
+/// Runtime settings for the server.
+///
+/// Call [`Settings::load`] to populate from the environment. All variables use
+/// the `FASTMCP_` prefix.
+///
+/// | Field | Env var | Default |
+/// |-------|---------|---------|
+/// | `host` | `FASTMCP_HOST` | `127.0.0.1` |
+/// | `port` | `FASTMCP_PORT` | `3000` |
+/// | `debug` | `FASTMCP_DEBUG` | `false` |
+/// | `log_level` | `FASTMCP_LOG_LEVEL` | `info` |
+/// | `client_init_timeout` | `FASTMCP_CLIENT_INIT_TIMEOUT` | *(none)* |
+/// | `include_tags` | `FASTMCP_INCLUDE_TAGS` | *(all)* |
+/// | `exclude_tags` | `FASTMCP_EXCLUDE_TAGS` | *(none)* |
+/// | `secrets` | files in `FASTMCP_SECRETS_DIR` | *(empty)* |
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settings {
+    /// HTTP bind address.
     pub host: String,
+    /// HTTP listen port.
     pub port: u16,
+    /// Enable verbose debug output.
     pub debug: bool,
     pub log_level: LogLevel,
-    pub client_init_timeout: Option<u64>, // in milliseconds
+    /// Milliseconds to wait for the client `initialize` handshake.
+    pub client_init_timeout: Option<u64>,
+    /// Secrets loaded from `FASTMCP_SECRETS_DIR` (one file per secret).
     pub secrets: HashMap<String, String>,
+    /// Only expose components with at least one of these tags.
     pub include_tags: Vec<String>,
+    /// Hide components with any of these tags.
     pub exclude_tags: Vec<String>,
 }
 

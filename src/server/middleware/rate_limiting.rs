@@ -48,15 +48,35 @@ impl TokenBucket {
     }
 }
 
+/// Token-bucket rate limiting middleware.
+///
+/// Each client has an independent bucket. Requests that exceed the bucket
+/// capacity are rejected with a `429`-style error containing a `retry_after`
+/// hint.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use rs_fast_mcp::server::middleware::rate_limiting::RateLimitMiddleware;
+/// use rs_fast_mcp::server::app::Server;
+///
+/// let server = Server::builder("my-server", "0.1.0")
+///     .stdio()
+///     .build();
+/// // 100 requests per second, global limiter
+/// server.core.add_middleware(RateLimitMiddleware::new(100.0, 100.0));
+/// ```
 pub struct RateLimitMiddleware {
     buckets: DashMap<String, Arc<Mutex<TokenBucket>>>,
     default_capacity: f64,
     default_refill_rate: f64,
-    // global_limit: bool, // Implement if needed
     get_client_id: Box<dyn Fn(&JsonRpcRequest) -> String + Send + Sync>,
 }
 
 impl RateLimitMiddleware {
+    /// Creates a single shared rate-limiter bucket for all clients.
+    ///
+    /// `capacity` is the burst size; `rate` is the tokens-per-second refill speed.
     pub fn new(capacity: f64, rate: f64) -> Self {
         Self {
             buckets: DashMap::new(),
@@ -66,20 +86,21 @@ impl RateLimitMiddleware {
         }
     }
 
+    /// Creates a rate limiter with a separate bucket per client.
+    ///
+    /// By default the client key is the constant `"client"` — use
+    /// [`with_client_extractor`](Self::with_client_extractor) to derive a
+    /// meaningful key (e.g. from the `Authorization` header).
     pub fn per_client(capacity: f64, rate: f64) -> Self {
         Self {
             buckets: DashMap::new(),
             default_capacity: capacity,
             default_refill_rate: rate,
-            // Simple heuristic since we don't have AuthContext here easily unless attached to request
-            // But we can check for "clientId" in params or rely on future integration.
-            // For now, we group by "unknown" if not found, effectively global for unauthed?
-            // Or maybe IP based? (Transport specific).
-            // Let's use a dummy ID for now.
             get_client_id: Box::new(|_| "client".to_string()),
         }
     }
 
+    /// Sets a custom function to extract a client identifier from each request.
     pub fn with_client_extractor<F>(mut self, extractor: F) -> Self
     where
         F: Fn(&JsonRpcRequest) -> String + Send + Sync + 'static,

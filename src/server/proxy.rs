@@ -4,12 +4,14 @@ use crate::server::core::FastMCP;
 use crate::tools::tool::{Tool, ToolFunction, ToolKind};
 use std::sync::Arc;
 
+/// Mounts a remote MCP server as a local tool/resource/prompt provider.
 pub struct MountedServer {
     client: Arc<Client>,
     prefix: String,
 }
 
 impl MountedServer {
+    /// Creates a new proxy backed by the given client transport.
     pub fn new(transport: Box<dyn ClientTransport>, prefix: &str) -> Self {
         let client = Arc::new(Client::new(transport));
         Self {
@@ -18,9 +20,9 @@ impl MountedServer {
         }
     }
 
-    /// Connects (initializes) and syncs tools to the host server.
+    /// Connects to the remote server, runs the MCP handshake, then mirrors its
+    /// tools, resources, and prompts onto `host` under the configured prefix.
     pub async fn mount(&self, host: &FastMCP) -> Result<(), FastMCPError> {
-        // 1. Initialize
         let init_params = serde_json::json!({
             "protocolVersion": "2024-11-05",
             "capabilities": {},
@@ -35,7 +37,6 @@ impl MountedServer {
             .request("notifications/initialized", None)
             .await?;
 
-        // 2. Sync Tools
         match self.client.list_tools().await {
             Ok(tools) => {
                 for tool in tools {
@@ -46,7 +47,6 @@ impl MountedServer {
             Err(e) => tracing::warn!("Failed to sync tools from {}: {}", self.prefix, e),
         }
 
-        // 3. Sync Resources
         match self.client.list_resources().await {
             Ok(resources) => {
                 for resource in resources {
@@ -57,7 +57,6 @@ impl MountedServer {
             Err(e) => tracing::warn!("Failed to sync resources from {}: {}", self.prefix, e),
         }
 
-        // 4. Sync Prompts
         match self.client.list_prompts().await {
             Ok(prompts) => {
                 for prompt in prompts {
@@ -93,22 +92,6 @@ impl MountedServer {
                 let messages_val = result.get("messages").ok_or(FastMCPError::InvalidRequest(
                     "Missing messages in prompt result".to_string(),
                 ))?;
-                // Map mcp::types::PromptMessage to prompts::prompt::PromptMessage?
-                // They might be structurally identical but different types.
-                // prompts::prompt::PromptMessage uses crate::mcp::types::ContentBlock.
-                // Let's check PromptMessage definition in prompt.rs again.
-                // Step 110:
-                // pub struct PromptMessage { pub role: String, pub content: crate::mcp::types::ContentBlock }
-                // In mcp::types.rs (Step 64), SamplingMessage has role/content.
-                // But PromptMessage in types? I didn't see it in Step 64.
-                // "Prompt as McpPrompt" was used in core.rs.
-                // McpPrompt has arguments.
-                // But `get_prompt` returns `GetPromptResult`.
-                // `GetPromptResult` has `messages`. Messages are `PromptMessage`.
-                // Verify `GetPromptResult` in types.
-                // Actually `GetPromptResult` wasn't shown in Step 64.
-                // But JSON structure is standard.
-                // Assuming `crate::prompts::prompt::PromptMessage` implements Deserialize matching the JSON.
 
                 let messages: Vec<crate::prompts::prompt::PromptMessage> =
                     serde_json::from_value(messages_val.clone()).map_err(|e| {
@@ -210,29 +193,10 @@ impl MountedServer {
         // We need to match `ResourceReadHandler` from `src/resources/manager.rs`.
         // Based on error, it expects `Fn(String, Context)`.
 
-        let handler = Arc::new(Box::new(
+        let handler: Arc<crate::resources::manager::ResourceReadHandler> = Arc::new(Box::new(
             move |uri: String, _ctx: crate::server::context::Context| {
                 let client = client.clone();
-                // Use local captured uri or argument? `ResourceReadHandler` is `Fn(String, Context)`.
-                // The argument `uri` is the one requested.
-                // If we are a proxy, we probably want to pass the REQUESTED uri to the remote?
-                // But if we prefixed it? "prefix_resourceURI".
-                // The remote server doesn't know about prefix.
-                // However, `remote_resource.uri` is the ORIGINAL uri.
-                // When we registered, we registered it with `remote_resource.uri` (Step 162 in previous proxy.rs content).
-                // Wait, did I prefix the name/URI?
-                // In `create_proxy_resource_and_register`, I used `remote_resource.uri` directly.
-                // `host.add_resource(remote_resource, ...)` uses the URI inside the struct.
-                // If multiple servers have same URI, they collide.
-                // Assuming no collision or we don't care about prefixing URI for now.
-                // So `uri` passed to handler passed to `read_resource` is correct.
-
-                Box::pin(async move {
-                    // client.read_resource returns Result<Vec<ResourceContents>, FastMCPError>
-                    // Handler expects Result<Vec<ResourceContents>, FastMCPError>
-                    // So we can just return it directly!
-                    client.read_resource(&uri).await
-                })
+                Box::pin(async move { client.read_resource(&uri).await })
                     as std::pin::Pin<
                         Box<
                             dyn std::future::Future<
@@ -244,7 +208,7 @@ impl MountedServer {
                         >,
                     >
             },
-        ) as crate::resources::manager::ResourceReadHandler);
+        ));
 
         host.add_resource(remote_resource, Some(handler))
     }

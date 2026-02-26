@@ -1,7 +1,18 @@
+//! Server-side authentication.
+//!
+//! Implement the [`AuthProvider`] trait to validate incoming JSON-RPC requests.
+//! A convenience [`SimpleAuthProvider`] is included for static bearer-token auth.
+//! Wrap any provider in [`AuthMiddleware`] to plug it into the server middleware
+//! pipeline.
+//!
+//! See also [`crate::server::auth::providers`] for cloud-vendor provider
+//! implementations (Google, GitHub, Azure, AWS, etc.).
+
 use crate::error::FastMCPError;
 use crate::mcp::types::JsonRpcRequest;
-
+use crate::server::middleware::{BoxFuture, Middleware, Next};
 use async_trait::async_trait;
+use std::sync::Arc;
 
 pub mod oauth;
 pub mod oidc;
@@ -22,29 +33,11 @@ pub trait AuthProvider: Send + Sync {
     async fn verify(&self, request: &JsonRpcRequest) -> Result<AuthContext, FastMCPError>;
 }
 
-/// A simple provider that checks for a specific token in the "authorization" header (simulated).
-/// Note: JSON-RPC requests don't inherently have headers unless passed in metadata or transport-specific context.
-/// For this implementation, we assume the token might be passed in a `_meta` field in params or we rely on Transport integration later.
-/// OR, we update `JsonRpcRequest` to carry transport metadata?
-/// `FastMCP` context creation happens *after* middleware.
-/// Wait, `JsonRpcRequest` is the raw request.
-/// If we are doing HTTP Auth, the HTTP Transport parses headers.
-/// The `AuthMiddleware` usually sits at the HTTP layer OR the MCP layer if the protocol supports auth frames.
-/// MCP Spec says: "Authentication... is handled by the transport".
+/// Bearer-token authentication provider.
 ///
-/// So `transport/http.rs` should extract headers and put them somewhere accessible?
-/// Currently `JsonRpcRequest` is pure JSON-RPC.
-///
-/// Use Case:
-/// The spec says `Context` holds auth info.
-///
-/// Let's define the trait to accept `&JsonRpcRequest`.
-/// But for HTTP Bearer tokens, they are in HTTP headers, not the JSON-RPC body.
-///
-/// This implies `AuthProvider` needs access to connection metadata.
-///
-/// For now, let's implement a `SimpleAuthProvider` that assumes a magic parameter or just a stub,
-/// until we bridge Transport Metadata -> Request Context.
+/// Validates requests by checking for a matching token in either:
+/// 1. The `Authorization: Bearer <token>` transport metadata header, or
+/// 2. A `"token"` field in the JSON-RPC `params` (fallback).
 pub struct SimpleAuthProvider {
     expected_token: String,
 }
@@ -114,14 +107,17 @@ pub fn current_context() -> Option<AuthContext> {
     CURRENT_AUTH_CONTEXT.try_with(|ctx| ctx.clone()).ok()
 }
 
-use crate::server::middleware::{BoxFuture, Middleware, Next};
-use std::sync::Arc;
-
+/// Middleware that runs every request through an [`AuthProvider`].
+///
+/// On success the verified [`AuthContext`] is stored in a task-local so that
+/// handlers can retrieve it via [`current_context`].
+/// On failure the request is rejected with a [`FastMCPError::InvalidRequest`].
 pub struct AuthMiddleware {
     provider: Arc<dyn AuthProvider>,
 }
 
 impl AuthMiddleware {
+    /// Wraps `provider` as a [`Middleware`] suitable for [`FastMCPServer::add_middleware`](crate::server::core::FastMCPServer::add_middleware).
     pub fn new(provider: Arc<dyn AuthProvider>) -> Self {
         Self { provider }
     }

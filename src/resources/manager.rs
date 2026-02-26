@@ -1,12 +1,13 @@
 use crate::error::FastMCPError;
 use crate::mcp::types::{Resource, ResourceContents};
-use crate::server::context::Context; // For future handlers
+use crate::server::context::Context;
 use dashmap::DashMap;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use tracing::{info, warn};
 
+/// An async function that reads a resource given its URI and a [`Context`].
 pub type ResourceReadHandler = Box<
     dyn Fn(
             String,
@@ -19,12 +20,14 @@ pub type ResourceReadHandler = Box<
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+/// A resource together with its optional read handler and usage counter.
 pub struct RegisteredResource {
     pub metadata: Resource,
     pub handler: Option<Arc<ResourceReadHandler>>,
     pub read_count: Arc<AtomicUsize>,
 }
 
+/// A URI template paired with its handler and compiled regex.
 pub struct RegisteredTemplate {
     pub template: crate::mcp::types::ResourceTemplate,
     pub handler: Arc<ResourceReadHandler>,
@@ -34,18 +37,16 @@ pub struct RegisteredTemplate {
 use crate::server::strategy::DuplicateStrategy;
 use std::sync::RwLock;
 
+/// Manages resource registration, lookup, subscriptions, and reading.
 pub struct ResourceManager {
     resources: DashMap<String, RegisteredResource>,
     templates: DashMap<String, RegisteredTemplate>,
-    // URI -> Set of Session IDs (or just a counter/flag if we don't have session tracking fully wired up yet)
-    // For now, let's just track a set of "subscribed" URIs (blindly) or SessionIDs if available.
-    // Context has session_id.
-    // Map<URI, HashSet<String>>
     subscriptions: DashMap<String, std::collections::HashSet<String>>,
     strategy: RwLock<DuplicateStrategy>,
 }
 
 impl ResourceManager {
+    /// Creates an empty resource manager with default duplicate strategy.
     pub fn new() -> Self {
         Self {
             resources: DashMap::new(),
@@ -55,14 +56,12 @@ impl ResourceManager {
         }
     }
 
+    /// Sets the duplicate-resource registration strategy.
     pub fn set_strategy(&self, strategy: DuplicateStrategy) {
         *self.strategy.write().unwrap() = strategy;
     }
 
-    // Register a static resource (metadata only or static content? Usually read handler needed for dynamic)
-    // For now, support metadata registration. Handlers need separate method or extended Resource struct?
-    // FastMCP pattern: register_resource(resource, handler).
-
+    /// Registers a resource with an optional read handler.
     pub fn register(
         &self,
         resource: Resource,
@@ -103,21 +102,20 @@ impl ResourceManager {
         Ok(())
     }
 
+    /// Registers a URI template with a read handler for dynamic resources.
+    ///
+    /// Template variables (`{var}`) are extracted into [`Context::arguments`](crate::server::context::Context)
+    /// before the handler is called.
     pub fn register_template(
         &self,
         template: crate::mcp::types::ResourceTemplate,
         handler: Arc<ResourceReadHandler>,
     ) -> Result<(), FastMCPError> {
         let uri_template = template.uri_template.clone();
-        // Convert URI template {arg} to regex (?P<arg>.*)
-        // This is a simplified implementation. Proper URI template parsing is complex.
-        // Assuming simple {var} components.
+        // Convert `{var}` placeholders in the URI template to named capture groups.
         let pattern =
             regex::Regex::new(r"\{([^}]+)\}").map_err(|e| FastMCPError::new(e.to_string()))?;
         let regex_str = pattern.replace_all(&uri_template, "(?P<$1>.*)").to_string();
-        // Or should we use .*? for broader match? MCP spec isn't super specific on template syntax but likely URI Template RFC.
-        // Let's stick to [^/]+ for path segments for now, or .* if it's the end?
-        // Let's use [^/]+ which is safe for path segments.
         let regex = regex::Regex::new(&format!("^{}$", regex_str))
             .map_err(|e| FastMCPError::new(e.to_string()))?;
 
@@ -127,16 +125,17 @@ impl ResourceManager {
             regex,
         };
 
-        // Templates are keyed by their URI template string
         self.templates.insert(uri_template.clone(), registered);
         info!("Registering resource template: {}", uri_template);
         Ok(())
     }
 
+    /// Looks up a resource by exact URI.
     pub fn get_resource(&self, uri: &str) -> Option<Resource> {
         self.resources.get(uri).map(|r| r.metadata.clone())
     }
 
+    /// Returns all registered static resources.
     pub fn list_resources(&self) -> Vec<Resource> {
         let mut list = Vec::new();
         for entry in self.resources.iter() {
@@ -145,17 +144,20 @@ impl ResourceManager {
         list
     }
 
+    /// Returns the read count for a given URI.
     pub fn get_usage(&self, uri: &str) -> Option<usize> {
         self.resources
             .get(uri)
             .map(|r| r.read_count.load(Ordering::Relaxed))
     }
 
+    /// Removes a resource and its subscriptions.
     pub fn remove_resource(&self, uri: &str) {
         self.resources.remove(uri);
         self.subscriptions.remove(uri);
     }
 
+    /// Returns all registered URI templates.
     pub fn list_templates(&self) -> Vec<crate::mcp::types::ResourceTemplate> {
         let mut list = Vec::new();
         for entry in self.templates.iter() {
@@ -164,6 +166,7 @@ impl ResourceManager {
         list
     }
 
+    /// Records a subscription for a resource URI from the given session.
     pub fn subscribe(&self, uri: String, session_id: Option<String>) {
         if let Some(sid) = session_id {
             let mut subs = self.subscriptions.entry(uri).or_default();
@@ -173,6 +176,7 @@ impl ResourceManager {
         }
     }
 
+    /// Removes a subscription for a resource URI from the given session.
     pub fn unsubscribe(&self, uri: String, session_id: Option<String>) {
         if let Some(sid) = session_id
             && let Some(mut subs) = self.subscriptions.get_mut(&uri)
@@ -181,6 +185,9 @@ impl ResourceManager {
         }
     }
 
+    /// Reads a resource by URI, dispatching to the registered handler.
+    ///
+    /// Falls back to URI template matching and fuzzy-match suggestions.
     pub async fn read_resource(
         &self,
         uri: &str,
@@ -209,11 +216,9 @@ impl ResourceManager {
             }
         }
 
-        // Try matching templates
+        // No exact match; try URI template matching.
         for template in self.templates.iter() {
-            // ... match logic ...
             if let Some(caps) = template.regex.captures(uri) {
-                // ...
                 let mut context = context.clone();
                 for name in template.regex.capture_names().flatten() {
                     if let Some(m) = caps.name(name) {

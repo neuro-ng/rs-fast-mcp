@@ -6,27 +6,33 @@ use std::sync::Arc;
 use tokio::task::JoinSet;
 use tracing::error;
 
+/// Top-level MCP server that owns a [`FastMCPServer`] and one or more transports.
+///
+/// Use [`Server::builder`] for ergonomic construction, or [`Server::new`]
+/// when you already have the core and transports prepared.
 pub struct Server {
+    /// The underlying MCP engine.
     pub core: FastMCPServer,
     transports: Vec<Box<dyn Transport>>,
 }
 
 impl Server {
+    /// Wraps an existing core and transport list.
     pub fn new(core: FastMCPServer, transports: Vec<Box<dyn Transport>>) -> Self {
         Self { core, transports }
     }
 
+    /// Returns a [`ServerBuilder`](crate::server::builder::ServerBuilder) for fluent construction.
     pub fn builder(name: &str, version: &str) -> crate::server::builder::ServerBuilder {
         crate::server::builder::ServerBuilder::new(name, version)
     }
 
+    /// Starts all transports, runs lifecycle hooks, and blocks until shutdown.
     pub async fn run(self) -> Result<(), FastMCPError> {
         // 1. Run startup hooks
         self.core.run_startup().await?;
 
         let mut set = JoinSet::new();
-        // Handler needs a clone of core, but core is cheap to clone (Arc wrapper)
-        // Handler needs a clone of core, but core is cheap to clone (Arc wrapper)
         let handler = Arc::new(self.core.clone());
 
         for transport in self.transports {

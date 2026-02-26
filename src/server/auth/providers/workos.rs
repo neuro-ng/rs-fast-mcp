@@ -5,13 +5,13 @@ use crate::server::auth::{AuthContext, AuthProvider};
 use async_trait::async_trait;
 use std::env;
 
-/// WorkOS Authentication Provider
+/// WorkOS Authentication Provider.
 ///
 /// Implements authentication using WorkOS AuthKit (User Management) via OIDC/OAuth2.
-/// See https://workos.com/docs/user-management
+/// See <https://workos.com/docs/user-management>
 pub struct WorkOSProvider {
     inner: OIDCProvider,
-    /// WorkOS specific domain e.g. https://api.workos.com or a custom domain
+    /// WorkOS API domain (e.g. `https://api.workos.com`).
     #[allow(dead_code)]
     domain: String,
 }
@@ -21,10 +21,8 @@ impl WorkOSProvider {
     ///
     /// # Arguments
     /// * `client_id` - The WorkOS Client ID
-    /// * `authkit_domain` - The WorkOS AuthKit Domain (e.g., https://<your-domain>.authkit.app)
+    /// * `authkit_domain` - The WorkOS AuthKit Domain (e.g., `https://your-domain.authkit.app`)
     pub async fn new(client_id: &str, authkit_domain: &str) -> Result<Self, FastMCPError> {
-        // AuthKit supports OIDC discovery at /.well-known/openid-configuration
-        // The issuer URL is effectively the authkit_domain.
         let issuer_url = authkit_domain.trim_end_matches('/');
 
         let inner = OIDCProvider::new(issuer_url, client_id)

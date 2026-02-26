@@ -5,13 +5,13 @@ use crate::server::auth::{AuthContext, AuthProvider};
 use async_trait::async_trait;
 use std::env;
 
-/// Scalekit Authentication Provider
+/// Scalekit Authentication Provider.
 ///
 /// Implements authentication using Scalekit (B2B Auth) via OIDC/OAuth2.1.
-/// See https://scalekit.com/docs
+/// See <https://scalekit.com/docs>
 pub struct ScalekitProvider {
     inner: OIDCProvider,
-    /// Scalekit Environment URL (e.g., https://your-env.scalekit.com)
+    /// Scalekit Environment URL (e.g., `https://your-env.scalekit.com`).
     #[allow(dead_code)]
     environment_url: String,
     /// Resource ID associated with the MCP server

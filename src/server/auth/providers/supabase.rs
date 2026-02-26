@@ -45,7 +45,7 @@ impl SupabaseProvider {
     /// Create a new SupabaseProvider.
     ///
     /// # Arguments
-    /// * `project_url` - The Supabase Project URL (e.g. https://abc123.supabase.co)
+    /// * `project_url` - The Supabase Project URL (e.g. `https://abc123.supabase.co`)
     pub fn new(project_url: &str) -> Self {
         let base = project_url.trim_end_matches('/');
         Self {
