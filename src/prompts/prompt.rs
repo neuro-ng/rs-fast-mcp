@@ -52,5 +52,4 @@ pub struct PromptFunction {
 /// A registered prompt component.
 ///
 /// Alias for [`Component<PromptFunction>`](crate::util::component::Component).
-
 pub type Prompt = crate::util::component::Component<PromptFunction>;
