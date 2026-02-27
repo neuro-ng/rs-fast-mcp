@@ -583,4 +583,164 @@ mod tests {
             "\"custom_stop\""
         );
     }
+
+    #[test]
+    fn test_content_block_text_serialize() {
+        let block = ContentBlock::Text(TextContent {
+            type_: "text".to_string(),
+            text: "hello world".to_string(),
+            annotations: None,
+        });
+        let json = serde_json::to_value(&block).unwrap();
+        assert_eq!(json["type"], "text");
+        assert_eq!(json["text"], "hello world");
+    }
+
+    #[test]
+    fn test_content_block_text_deserialize() {
+        let json = serde_json::json!({"type": "text", "text": "hello world"});
+        let parsed: ContentBlock = serde_json::from_value(json).unwrap();
+        match parsed {
+            ContentBlock::Text(t) => assert_eq!(t.text, "hello world"),
+            _ => panic!("Expected Text variant"),
+        }
+    }
+
+    #[test]
+    fn test_content_block_image_serialize() {
+        let block = ContentBlock::Image(ImageContent {
+            type_: "image".to_string(),
+            data: "aGVsbG8=".to_string(),
+            mime_type: "image/png".to_string(),
+            annotations: None,
+        });
+        let json = serde_json::to_value(&block).unwrap();
+        assert_eq!(json["type"], "image");
+        assert_eq!(json["mimeType"], "image/png");
+        assert_eq!(json["data"], "aGVsbG8=");
+    }
+
+    #[test]
+    fn test_content_block_image_deserialize() {
+        let json =
+            serde_json::json!({"type": "image", "data": "aGVsbG8=", "mimeType": "image/png"});
+        let parsed: ContentBlock = serde_json::from_value(json).unwrap();
+        match parsed {
+            ContentBlock::Image(i) => {
+                assert_eq!(i.mime_type, "image/png");
+                assert_eq!(i.data, "aGVsbG8=");
+            }
+            _ => panic!("Expected Image variant"),
+        }
+    }
+
+    #[test]
+    fn test_content_block_audio_serialize() {
+        let block = ContentBlock::Audio(AudioContent {
+            type_: "audio".to_string(),
+            data: "YXVkaW8=".to_string(),
+            mime_type: "audio/mp3".to_string(),
+            annotations: None,
+        });
+        let json = serde_json::to_value(&block).unwrap();
+        assert_eq!(json["type"], "audio");
+        assert_eq!(json["mimeType"], "audio/mp3");
+    }
+
+    #[test]
+    fn test_content_block_audio_deserialize() {
+        let json =
+            serde_json::json!({"type": "audio", "data": "YXVkaW8=", "mimeType": "audio/mp3"});
+        let parsed: ContentBlock = serde_json::from_value(json).unwrap();
+        match parsed {
+            ContentBlock::Audio(a) => {
+                assert_eq!(a.mime_type, "audio/mp3");
+                assert_eq!(a.data, "YXVkaW8=");
+            }
+            _ => panic!("Expected Audio variant"),
+        }
+    }
+
+    #[test]
+    fn test_role_serialization() {
+        assert_eq!(serde_json::to_string(&Role::User).unwrap(), "\"user\"");
+        assert_eq!(
+            serde_json::to_string(&Role::Assistant).unwrap(),
+            "\"assistant\""
+        );
+        let parsed: Role = serde_json::from_str("\"user\"").unwrap();
+        assert_eq!(parsed, Role::User);
+    }
+
+    #[test]
+    fn test_notification_roundtrip() {
+        let notif = JsonRpcNotification {
+            jsonrpc: JSONRPC_VERSION.to_string(),
+            method: "notifications/tools/list_changed".to_string(),
+            params: None,
+        };
+        let json = serde_json::to_string(&notif).unwrap();
+        let parsed: JsonRpcNotification = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.method, "notifications/tools/list_changed");
+        assert!(parsed.params.is_none());
+    }
+
+    #[test]
+    fn test_response_roundtrip() {
+        let resp = JsonRpcResponse {
+            jsonrpc: JSONRPC_VERSION.to_string(),
+            id: RequestId::Int(42),
+            result: serde_json::json!({"status": "ok"}),
+        };
+        let json = serde_json::to_string(&resp).unwrap();
+        let parsed: JsonRpcResponse = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.id, RequestId::Int(42));
+        assert_eq!(parsed.result["status"], "ok");
+    }
+
+    #[test]
+    fn test_resource_contents_text() {
+        let rc = ResourceContents {
+            uri: "file:///test.txt".to_string(),
+            mime_type: Some("text/plain".to_string()),
+            text: Some("file content".to_string()),
+            blob: None,
+        };
+        let json = serde_json::to_string(&rc).unwrap();
+        let parsed: ResourceContents = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.uri, "file:///test.txt");
+        assert_eq!(parsed.text.unwrap(), "file content");
+        assert!(parsed.blob.is_none());
+    }
+
+    #[test]
+    fn test_resource_contents_blob() {
+        let rc = ResourceContents {
+            uri: "file:///image.png".to_string(),
+            mime_type: Some("image/png".to_string()),
+            text: None,
+            blob: Some("base64data".to_string()),
+        };
+        let json = serde_json::to_string(&rc).unwrap();
+        let parsed: ResourceContents = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.blob.unwrap(), "base64data");
+        assert!(parsed.text.is_none());
+    }
+
+    #[test]
+    fn test_request_id_string_variant() {
+        let id = RequestId::String("abc-123".to_string());
+        let json = serde_json::to_string(&id).unwrap();
+        assert_eq!(json, "\"abc-123\"");
+        let parsed: RequestId = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, RequestId::String("abc-123".to_string()));
+    }
+
+    #[test]
+    fn test_server_capabilities_default_empty() {
+        let caps = ServerCapabilities::default();
+        let json = serde_json::to_value(&caps).unwrap();
+        let obj = json.as_object().unwrap();
+        assert!(obj.is_empty());
+    }
 }

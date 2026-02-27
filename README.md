@@ -40,33 +40,51 @@ rs-fast-mcp/
 
 ## Test Results Summary
 
-All modules are fully tested and passing:
+**132 tests** across unit, integration, and doc-tests — all passing:
 
-**✅ MCP Core & Utilities**: 13 tests passing
-- Protocol parsing, Configuration loading
-- JSON Schema validation, Settings management
-
-**✅ Server Module**: 25 tests passing
+**✅ Server Module**: 43 tests passing
 - Core server lifecycle, Stdio/SSE transports
-- Authentication (Google, GitHub, OIDC, etc.)
+- Authentication (Google, GitHub, OIDC, Auth0, AWS Cognito)
 - Middleware (Rate limiting, Caching, Logging)
-- Request handling and mounting
+- Request handling, Mounting, Proxy, Lifespan hooks
+- Context state management, Change reporting flags
+- DuplicateStrategy serialization
 
 **✅ Client Module**: 7 tests passing
-- Client-server integration, Error handling
+- Client-server integration, Error handling, Timeouts
 - Transport instantiation, Authentication injection
-- Proxy support
+- Proxy and sampling support
 
-**✅ Tools Module**: 7 tests passing
+**✅ Tools Module**: 20 tests passing
 - Registration, Execution, Validation
-- Duplicate handling, Fuzzy matching
+- Duplicate handling (Error, Ignore, Replace), Fuzzy matching, Stats
+- Tool builder (new, add_parameter, with_handler, schema structure)
 
-**✅ Resources Module**: 5 tests passing
+**✅ Resources Module**: 14 tests passing
 - Management, Reading, Templates
-- Subscriptions, Stats
+- Subscriptions, Subscribe/Unsubscribe, Stats, Filtering
+- Duplicate strategies (Error, Ignore)
 
-**✅ Prompts Module**: 2 tests passing
-- Management and Execution
+**✅ Prompts & Validation**: 14 tests passing
+- Prompt management, Schema validation
+- Input validation (required fields, types, URIs)
+- Duplicate strategies (Error, Ignore, Replace)
+- Prompt execution (not-found error path)
+
+**✅ Core & Utilities**: 16 tests passing
+- Settings loading, JSON Schema, Configuration
+- LogLevel parsing (valid/invalid), Tag loading from env
+- Error variant construction and display
+- Image/Audio content block generation
+
+**✅ MCP Protocol Types**: 15 tests passing
+- ContentBlock serialization/deserialization (Text, Image, Audio)
+- Role, Notification, Response round-trips
+- ResourceContents (text/blob), RequestId variants
+- MCPConfig CRUD, Transport inference, ServerCapabilities
+
+**✅ Doc-tests**: 3 tests passing
+- Library entry point, ServerBuilder, RateLimitMiddleware
 
 ## Core Components
 

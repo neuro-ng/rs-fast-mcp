@@ -125,3 +125,66 @@ impl Tool {
         self
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_tool_new_defaults() {
+        let tool = Tool::new("greet", "Says hello");
+        assert_eq!(tool.name, "greet");
+        assert_eq!(tool.description.as_deref(), Some("Says hello"));
+        assert!(tool.enabled);
+        assert!(tool.tags.is_empty());
+        assert!(tool.key.is_none());
+        assert_eq!(tool.title.as_deref(), Some("greet"));
+    }
+
+    #[test]
+    fn test_add_parameter_modifies_schema() {
+        let tool = Tool::new("calc", "calculator")
+            .add_parameter("x", "number", "first operand")
+            .add_parameter("op", "string", "operator");
+        if let ToolKind::Function(func) = &tool.data {
+            let props = func.input_schema["properties"].as_object().unwrap();
+            assert!(props.contains_key("x"));
+            assert_eq!(props["x"]["type"], "number");
+            assert!(props.contains_key("op"));
+            assert_eq!(props["op"]["type"], "string");
+        } else {
+            panic!("Expected Function tool kind");
+        }
+    }
+
+    #[test]
+    fn test_with_handler_replaces_handler() {
+        let tool = Tool::new("test", "test tool").with_handler(Box::new(|_ctx, _args| {
+            Box::pin(async {
+                Ok(ToolResult {
+                    content: vec![],
+                    structured_content: None,
+                })
+            })
+        }));
+        // Just verify tool was created without panic
+        assert_eq!(tool.name, "test");
+    }
+
+    #[test]
+    fn test_tool_function_input_schema_structure() {
+        let tool = Tool::new("noop", "does nothing");
+        if let ToolKind::Function(func) = &tool.data {
+            assert_eq!(func.input_schema["type"], "object");
+            assert!(
+                func.input_schema["properties"]
+                    .as_object()
+                    .unwrap()
+                    .is_empty()
+            );
+            assert!(func.compiled_schema.is_none());
+        } else {
+            panic!("Expected Function tool kind");
+        }
+    }
+}

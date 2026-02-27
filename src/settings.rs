@@ -250,4 +250,38 @@ mod tests {
         }
         fs::remove_dir_all(temp_dir).unwrap();
     }
+
+    #[test]
+    fn test_log_level_invalid_parse() {
+        let result = LogLevel::from_str("garbage");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Invalid log level"));
+    }
+
+    #[test]
+    fn test_log_level_valid_parse() {
+        assert!(matches!(LogLevel::from_str("debug"), Ok(LogLevel::Debug)));
+        assert!(matches!(LogLevel::from_str("INFO"), Ok(LogLevel::Info)));
+        assert!(matches!(LogLevel::from_str("Warn"), Ok(LogLevel::Warn)));
+        assert!(matches!(LogLevel::from_str("ERROR"), Ok(LogLevel::Error)));
+    }
+
+    #[test]
+    fn test_load_tags_from_env() {
+        let _lock = ENV_LOCK.lock().unwrap();
+
+        unsafe {
+            env::set_var("FASTMCP_INCLUDE_TAGS", "alpha, beta, gamma");
+            env::set_var("FASTMCP_EXCLUDE_TAGS", "internal");
+        }
+
+        let settings = Settings::load();
+        assert_eq!(settings.include_tags, vec!["alpha", "beta", "gamma"]);
+        assert_eq!(settings.exclude_tags, vec!["internal"]);
+
+        unsafe {
+            env::remove_var("FASTMCP_INCLUDE_TAGS");
+            env::remove_var("FASTMCP_EXCLUDE_TAGS");
+        }
+    }
 }

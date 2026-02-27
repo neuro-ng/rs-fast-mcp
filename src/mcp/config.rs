@@ -234,4 +234,83 @@ mod tests {
             TransportType::StreamableHttp
         );
     }
+
+    #[test]
+    fn test_mcp_config_add_get_remove() {
+        let mut config = MCPConfig::new();
+        assert!(config.mcp_servers.is_empty());
+
+        let server = MCPServerConfig::Stdio(StdioMCPServer {
+            command: "echo".to_string(),
+            args: vec![],
+            env: HashMap::new(),
+            cwd: None,
+            timeout: None,
+            description: None,
+            icon: None,
+            authentication: None,
+        });
+        config.add_server("test".to_string(), server);
+        assert!(config.get_server("test").is_some());
+        assert!(config.get_server("missing").is_none());
+
+        config.remove_server("test");
+        assert!(config.get_server("test").is_none());
+    }
+
+    #[test]
+    fn test_remote_server_explicit_transport() {
+        let server = RemoteMCPServer {
+            url: "http://example.com/api".to_string(),
+            transport: Some(TransportType::Sse),
+            headers: HashMap::new(),
+            sse_read_timeout: None,
+            timeout: None,
+            description: None,
+            icon: None,
+            authentication: None,
+        };
+        assert_eq!(server.get_transport_type(), TransportType::Sse);
+    }
+
+    #[test]
+    fn test_remote_server_inferred_transport() {
+        let server = RemoteMCPServer {
+            url: "http://example.com/sse".to_string(),
+            transport: None,
+            headers: HashMap::new(),
+            sse_read_timeout: None,
+            timeout: None,
+            description: None,
+            icon: None,
+            authentication: None,
+        };
+        assert_eq!(server.get_transport_type(), TransportType::Sse);
+
+        let server2 = RemoteMCPServer {
+            url: "http://example.com/mcp".to_string(),
+            transport: None,
+            headers: HashMap::new(),
+            sse_read_timeout: None,
+            timeout: None,
+            description: None,
+            icon: None,
+            authentication: None,
+        };
+        assert_eq!(server2.get_transport_type(), TransportType::StreamableHttp);
+    }
+
+    #[test]
+    fn test_mcp_config_default_is_empty() {
+        let config = MCPConfig::default();
+        assert!(config.mcp_servers.is_empty());
+    }
+
+    #[test]
+    fn test_infer_transport_sse_trailing_slash() {
+        assert_eq!(
+            infer_transport_type_from_url("http://example.com/sse/"),
+            TransportType::Sse
+        );
+    }
 }

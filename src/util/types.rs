@@ -108,3 +108,71 @@ impl Audio {
         }))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_image_new_fields() {
+        let img = Image::new(vec![0xFF, 0xD8, 0xFF], "image/jpeg");
+        assert!(img.path.is_none());
+        assert_eq!(img.mime_type, "image/jpeg");
+        assert_eq!(img.data.as_ref().unwrap().len(), 3);
+    }
+
+    #[test]
+    fn test_image_to_content_block() {
+        let img = Image::new(vec![1, 2, 3, 4], "image/png");
+        let block = img.to_content_block().unwrap();
+        match block {
+            ContentBlock::Image(ic) => {
+                assert_eq!(ic.mime_type, "image/png");
+                // base64 of [1, 2, 3, 4] is "AQIDBA=="
+                assert_eq!(ic.data, general_purpose::STANDARD.encode(&[1u8, 2, 3, 4]));
+                assert_eq!(ic.type_, "image");
+            }
+            _ => panic!("Expected Image content block"),
+        }
+    }
+
+    #[test]
+    fn test_image_no_data_returns_error() {
+        let img = Image {
+            path: None,
+            data: None,
+            mime_type: "image/png".to_string(),
+        };
+        let result = img.to_content_block();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_audio_to_resource_content() {
+        let audio = Audio {
+            path: Some("test.mp3".to_string()),
+            data: Some(vec![5, 6, 7]),
+            mime_type: "audio/mpeg".to_string(),
+        };
+        let block = audio.to_resource_content().unwrap();
+        match block {
+            ContentBlock::EmbeddedResource(er) => {
+                assert_eq!(er.resource.uri, "test.mp3");
+                assert_eq!(er.resource.mime_type.unwrap(), "audio/mpeg");
+                assert!(er.resource.blob.is_some());
+            }
+            _ => panic!("Expected EmbeddedResource content block"),
+        }
+    }
+
+    #[test]
+    fn test_audio_no_data_returns_error() {
+        let audio = Audio {
+            path: None,
+            data: None,
+            mime_type: "audio/wav".to_string(),
+        };
+        let result = audio.to_resource_content();
+        assert!(result.is_err());
+    }
+}

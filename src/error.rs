@@ -94,3 +94,43 @@ impl FastMCPError {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_new_creates_base_variant() {
+        let err = FastMCPError::new("something broke");
+        let msg = err.to_string();
+        assert!(msg.contains("something broke"));
+    }
+
+    #[test]
+    fn test_invalid_request_display() {
+        let err = FastMCPError::InvalidRequest("bad input".to_string());
+        assert_eq!(err.to_string(), "Invalid Request: bad input");
+    }
+
+    #[test]
+    fn test_json_rpc_error_display() {
+        let err = FastMCPError::JsonRpcError {
+            code: -32600,
+            message: "Invalid JSON".to_string(),
+            data: None,
+        };
+        let msg = err.to_string();
+        assert!(msg.contains("-32600"));
+        assert!(msg.contains("Invalid JSON"));
+    }
+
+    #[test]
+    fn test_not_found_variant() {
+        let err = FastMCPError::NotFound(ErrorData {
+            message: "tool xyz".to_string(),
+            code: Some(-32601),
+            data: None,
+        });
+        assert!(err.to_string().contains("tool xyz"));
+    }
+}

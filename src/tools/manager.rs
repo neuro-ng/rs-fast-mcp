@@ -183,3 +183,89 @@ impl Default for ToolManager {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tools::tool::Tool;
+
+    fn make_tool(name: &str) -> Tool {
+        Tool::new(name, &format!("{} description", name))
+    }
+
+    #[test]
+    fn test_register_and_get() {
+        let mgr = ToolManager::new();
+        mgr.register(make_tool("echo")).unwrap();
+        let tool = mgr.get_tool("echo");
+        assert!(tool.is_some());
+        assert_eq!(tool.unwrap().name, "echo");
+    }
+
+    #[test]
+    fn test_get_nonexistent_returns_none() {
+        let mgr = ToolManager::new();
+        assert!(mgr.get_tool("missing").is_none());
+    }
+
+    #[test]
+    fn test_list_tools() {
+        let mgr = ToolManager::new();
+        mgr.register(make_tool("a")).unwrap();
+        mgr.register(make_tool("b")).unwrap();
+        mgr.register(make_tool("c")).unwrap();
+        let list = mgr.list_tools();
+        assert_eq!(list.len(), 3);
+        let names: Vec<String> = list.iter().map(|t| t.name.clone()).collect();
+        assert!(names.contains(&"a".to_string()));
+        assert!(names.contains(&"b".to_string()));
+        assert!(names.contains(&"c".to_string()));
+    }
+
+    #[test]
+    fn test_remove_tool() {
+        let mgr = ToolManager::new();
+        mgr.register(make_tool("temp")).unwrap();
+        assert!(mgr.get_tool("temp").is_some());
+        mgr.remove_tool("temp");
+        assert!(mgr.get_tool("temp").is_none());
+    }
+
+    #[test]
+    fn test_usage_tracking() {
+        let mgr = ToolManager::new();
+        mgr.register(make_tool("counter")).unwrap();
+        assert_eq!(mgr.get_usage("counter"), Some(0));
+        assert_eq!(mgr.get_usage("missing"), None);
+    }
+
+    #[test]
+    fn test_strategy_error_rejects_duplicate() {
+        let mgr = ToolManager::new();
+        mgr.set_strategy(DuplicateStrategy::Error);
+        mgr.register(make_tool("dup")).unwrap();
+        let result = mgr.register(make_tool("dup"));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Duplicate tool"));
+    }
+
+    #[test]
+    fn test_strategy_ignore_keeps_original() {
+        let mgr = ToolManager::new();
+        mgr.set_strategy(DuplicateStrategy::Ignore);
+        mgr.register(make_tool("keep")).unwrap();
+        mgr.register(Tool::new("keep", "different")).unwrap();
+        let tool = mgr.get_tool("keep").unwrap();
+        assert_eq!(tool.description.unwrap(), "keep description");
+    }
+
+    #[test]
+    fn test_strategy_replace_overwrites() {
+        let mgr = ToolManager::new();
+        mgr.set_strategy(DuplicateStrategy::Replace);
+        mgr.register(make_tool("replace_me")).unwrap();
+        mgr.register(Tool::new("replace_me", "new desc")).unwrap();
+        let tool = mgr.get_tool("replace_me").unwrap();
+        assert_eq!(tool.description.unwrap(), "new desc");
+    }
+}

@@ -264,3 +264,100 @@ impl Default for ResourceManager {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::mcp::types::{BaseMetadata, Resource};
+
+    fn make_resource(uri: &str, name: &str) -> Resource {
+        Resource {
+            uri: uri.to_string(),
+            description: Some(format!("{} resource", name)),
+            mime_type: Some("text/plain".to_string()),
+            size: None,
+            annotations: None,
+            icons: None,
+            tags: None,
+            base_metadata: BaseMetadata {
+                name: name.to_string(),
+                title: None,
+            },
+        }
+    }
+
+    #[test]
+    fn test_register_and_get() {
+        let mgr = ResourceManager::new();
+        mgr.register(make_resource("file:///a.txt", "a"), None)
+            .unwrap();
+        let r = mgr.get_resource("file:///a.txt");
+        assert!(r.is_some());
+        assert_eq!(r.unwrap().uri, "file:///a.txt");
+    }
+
+    #[test]
+    fn test_get_nonexistent_returns_none() {
+        let mgr = ResourceManager::new();
+        assert!(mgr.get_resource("file:///missing").is_none());
+    }
+
+    #[test]
+    fn test_list_resources() {
+        let mgr = ResourceManager::new();
+        mgr.register(make_resource("file:///a", "a"), None).unwrap();
+        mgr.register(make_resource("file:///b", "b"), None).unwrap();
+        let list = mgr.list_resources();
+        assert_eq!(list.len(), 2);
+    }
+
+    #[test]
+    fn test_remove_resource() {
+        let mgr = ResourceManager::new();
+        mgr.register(make_resource("file:///rm", "rm"), None)
+            .unwrap();
+        assert!(mgr.get_resource("file:///rm").is_some());
+        mgr.remove_resource("file:///rm");
+        assert!(mgr.get_resource("file:///rm").is_none());
+    }
+
+    #[test]
+    fn test_usage_tracking() {
+        let mgr = ResourceManager::new();
+        mgr.register(make_resource("file:///u", "u"), None).unwrap();
+        assert_eq!(mgr.get_usage("file:///u"), Some(0));
+        assert_eq!(mgr.get_usage("file:///missing"), None);
+    }
+
+    #[test]
+    fn test_subscribe_and_unsubscribe() {
+        let mgr = ResourceManager::new();
+        mgr.register(make_resource("file:///s", "s"), None).unwrap();
+        mgr.subscribe("file:///s".to_string(), Some("sess1".to_string()));
+        mgr.subscribe("file:///s".to_string(), Some("sess2".to_string()));
+        mgr.unsubscribe("file:///s".to_string(), Some("sess1".to_string()));
+        // No panic = success (subscriptions are internal)
+    }
+
+    #[test]
+    fn test_strategy_error_rejects_duplicate() {
+        let mgr = ResourceManager::new();
+        mgr.set_strategy(DuplicateStrategy::Error);
+        mgr.register(make_resource("file:///dup", "dup"), None)
+            .unwrap();
+        let result = mgr.register(make_resource("file:///dup", "dup"), None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_strategy_ignore_keeps_original() {
+        let mgr = ResourceManager::new();
+        mgr.set_strategy(DuplicateStrategy::Ignore);
+        mgr.register(make_resource("file:///k", "original"), None)
+            .unwrap();
+        mgr.register(make_resource("file:///k", "replacement"), None)
+            .unwrap();
+        let r = mgr.get_resource("file:///k").unwrap();
+        assert_eq!(r.description.unwrap(), "original resource");
+    }
+}
