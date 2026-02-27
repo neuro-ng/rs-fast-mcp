@@ -42,6 +42,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::clone_on_copy)]
     fn test_clone_and_copy() {
         let s = DuplicateStrategy::Error;
         let cloned = s.clone();

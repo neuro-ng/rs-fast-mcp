@@ -129,7 +129,7 @@ mod tests {
             ContentBlock::Image(ic) => {
                 assert_eq!(ic.mime_type, "image/png");
                 // base64 of [1, 2, 3, 4] is "AQIDBA=="
-                assert_eq!(ic.data, general_purpose::STANDARD.encode(&[1u8, 2, 3, 4]));
+                assert_eq!(ic.data, general_purpose::STANDARD.encode([1u8, 2, 3, 4]));
                 assert_eq!(ic.type_, "image");
             }
             _ => panic!("Expected Image content block"),
