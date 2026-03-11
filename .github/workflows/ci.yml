@@ -38,6 +38,12 @@ jobs:
     - name: Check formatting
       run: cargo fmt -- --check
 
+    - name: Install cargo-audit
+      run: cargo install cargo-audit
+
+    - name: Run cargo-audit
+      run: cargo audit
+
     - name: Clippy
       run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
