@@ -1,4 +1,6 @@
 # Rs Fast MCP 🦀
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fneuro-ng%2Frs-fast-mcp.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2Fneuro-ng%2Frs-fast-mcp?ref=badge_shield)
+
 
 **High-performance, async-first Rust implementation of the Model Context Protocol (MCP)**
 
@@ -218,3 +220,6 @@ Apache-2.0 License - see [LICENSE](LICENSE) file for details.
 ---
 
 *Ported with ❤️ from OCaml to Rust*
+
+
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fneuro-ng%2Frs-fast-mcp.svg?type=large)](https://app.fossa.com/projects/git%2Bgithub.com%2Fneuro-ng%2Frs-fast-mcp?ref=badge_large)
