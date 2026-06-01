@@ -1,8 +1,8 @@
 use rs_fast_mcp::error::FastMCPError;
-use rs_fast_mcp::mcp::types::{
-    BaseMetadata, ContentBlock, Resource, ResourceContents, TextContent,
-};
-use rs_fast_mcp::prompts::prompt::{Prompt, PromptFunction, PromptMessage};
+use rs_fast_mcp::mcp::types::{BaseMetadata, Resource};
+use rs_fast_mcp::prompts::prompt::{Prompt, PromptFunction};
+use rs_fast_mcp::prompts::types::{Message, PromptResult};
+use rs_fast_mcp::resources::types::ResourceResult;
 use rs_fast_mcp::server::core::FastMCPServer;
 use rs_fast_mcp::server::transport::Transport;
 use rs_fast_mcp::server::transport::stdio::StdioTransport;
@@ -82,14 +82,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let resource_handler = Arc::new(Box::new(|_uri: String, _ctx: Context| {
         Box::pin(async {
-            Ok(vec![ResourceContents {
-                uri: "file:///hello".to_string(),
-                mime_type: Some("text/plain".to_string()),
-                text: Some("Hello from simple server!".to_string()),
-                blob: None,
-            }])
+            Ok(ResourceResult::from_text(
+                "Hello from simple server!".to_string(),
+                Some("text/plain".to_string()),
+            ))
         })
-            as Pin<Box<dyn Future<Output = Result<Vec<ResourceContents>, FastMCPError>> + Send>>
+            as Pin<Box<dyn Future<Output = Result<ResourceResult, FastMCPError>> + Send>>
     })
         as rs_fast_mcp::resources::manager::ResourceReadHandler);
 
@@ -117,17 +115,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .and_then(|v| v.as_str())
                         .unwrap_or("Stranger")
                         .to_string();
-                    Ok(vec![PromptMessage {
-                        role: "user".to_string(),
-                        content: ContentBlock::Text(TextContent {
-                            text: format!("Hello, {}!", name),
-                            type_: "text".to_string(),
-                            annotations: None,
-                        }),
-                    }])
+                    Ok(PromptResult::new(vec![Message::user(format!(
+                        "Hello, {}!",
+                        name
+                    ))]))
                 })
                     as Pin<
-                        Box<dyn Future<Output = Result<Vec<PromptMessage>, FastMCPError>> + Send>,
+                        Box<dyn Future<Output = Result<PromptResult, FastMCPError>> + Send>,
                     >
             })),
         },

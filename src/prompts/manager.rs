@@ -1,5 +1,6 @@
 use crate::error::FastMCPError;
-use crate::prompts::prompt::{Prompt, PromptMessage};
+use crate::prompts::prompt::Prompt;
+use crate::prompts::types::PromptResult;
 use dashmap::DashMap;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -78,20 +79,19 @@ impl PromptManager {
         self.prompts.remove(name);
     }
 
-    /// Validates required arguments, runs the handler, and returns the
-    /// prompt description together with the rendered messages.
+    /// Validates required arguments, runs the handler, and returns a [`PromptResult`].
     pub async fn get_prompt_execution(
         &self,
         name: &str,
         arguments: Option<HashMap<String, Value>>,
-    ) -> Result<(Option<String>, Vec<PromptMessage>), FastMCPError> {
+    ) -> Result<PromptResult, FastMCPError> {
         let prompt = self
             .get_prompt(name)
             .ok_or_else(|| FastMCPError::InvalidRequest(format!("Prompt not found: {}", name)))?;
 
         let args = arguments.unwrap_or_default();
 
-        // Validation: Check required arguments
+        // Validate required arguments
         if let Some(defined_args) = &prompt.data.arguments {
             for arg_def in defined_args {
                 if arg_def.required.unwrap_or(false) && !args.contains_key(&arg_def.name) {
@@ -104,9 +104,13 @@ impl PromptManager {
         }
 
         let handler = &prompt.data.fn_handler;
-        let messages = (handler)(args).await?;
+        let mut result = (handler)(args).await?;
 
-        Ok((prompt.description.clone(), messages))
+        // Propagate the component-level description if not set by the handler
+        if result.description.is_none() {
+            result.description = prompt.description.clone();
+        }
+        Ok(result)
     }
 }
 
@@ -137,16 +141,9 @@ mod tests {
                 arguments: None,
                 fn_handler: Arc::new(Box::new(|_args| {
                     Box::pin(async {
-                        Ok(vec![crate::prompts::prompt::PromptMessage {
-                            role: "assistant".to_string(),
-                            content: crate::mcp::types::ContentBlock::Text(
-                                crate::mcp::types::TextContent {
-                                    type_: "text".to_string(),
-                                    text: "hello".to_string(),
-                                    annotations: None,
-                                },
-                            ),
-                        }])
+                        Ok(crate::prompts::types::PromptResult::new(vec![
+                            crate::prompts::types::Message::assistant("hello".to_string()),
+                        ]))
                     })
                 })),
             },

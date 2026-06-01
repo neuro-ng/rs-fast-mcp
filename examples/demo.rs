@@ -1,6 +1,7 @@
 use chrono::Local;
 use rs_fast_mcp::error::FastMCPError;
-use rs_fast_mcp::mcp::types::{BaseMetadata, Resource, ResourceContents};
+use rs_fast_mcp::mcp::types::{BaseMetadata, Resource};
+use rs_fast_mcp::resources::types::ResourceResult;
 use rs_fast_mcp::server::context::Context;
 use rs_fast_mcp::server::core::FastMCPServer;
 use rs_fast_mcp::server::transport::Transport;
@@ -143,14 +144,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let resource_handler = Arc::new(Box::new(|_uri: String, _ctx: Context| {
         Box::pin(async {
             let info = "OxFastMCP Demo Server (Rust Port)\nVersion: 1.0.0".to_string();
-            Ok(vec![ResourceContents {
-                uri: "demo://info".to_string(),
-                mime_type: Some("text/plain".to_string()),
-                text: Some(info),
-                blob: None,
-            }])
+            Ok(ResourceResult::from_text(info, Some("text/plain".to_string())))
         })
-            as Pin<Box<dyn Future<Output = Result<Vec<ResourceContents>, FastMCPError>> + Send>>
+            as Pin<Box<dyn Future<Output = Result<ResourceResult, FastMCPError>> + Send>>
     })
         as rs_fast_mcp::resources::manager::ResourceReadHandler);
 

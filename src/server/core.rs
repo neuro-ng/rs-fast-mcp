@@ -9,11 +9,13 @@ use crate::prompts::prompt::Prompt;
 use crate::resources::manager::{ResourceManager, ResourceReadHandler};
 use crate::server::context::Context;
 use crate::server::middleware::{Middleware, Next};
+use crate::server::providers::Provider;
 use crate::server::strategy::DuplicateStrategy;
+use crate::server::visibility::VisibilityFilter;
 use crate::tools::manager::ToolManager;
 use crate::tools::tool::Tool;
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
@@ -39,9 +41,17 @@ pub struct FastMCP {
     on_startup: Arc<Mutex<Vec<LifespanHook>>>,
     on_shutdown: Arc<Mutex<Vec<LifespanHook>>>,
     middlewares: Arc<Mutex<Vec<Arc<dyn Middleware>>>>,
+    /// Hierarchical visibility filter replacing per-component `enabled` flags.
+    visibility: Arc<Mutex<VisibilityFilter>>,
+    /// Legacy tag-based include filter (kept for backward compatibility).
     include_tags: Arc<Mutex<Vec<String>>>,
+    /// Legacy tag-based exclude filter (kept for backward compatibility).
     exclude_tags: Arc<Mutex<Vec<String>>>,
     notification_sender: tokio::sync::broadcast::Sender<crate::mcp::types::JsonRpcMessage>,
+    /// Mounted child providers (registered via [`mount`]).
+    providers: Arc<Mutex<Vec<Arc<dyn Provider>>>>,
+    /// Background task scheduler.
+    docket: Arc<crate::server::tasks::Docket>,
 }
 
 impl std::fmt::Debug for FastMCP {
@@ -67,9 +77,12 @@ impl FastMCP {
             on_startup: Arc::new(Mutex::new(Vec::new())),
             on_shutdown: Arc::new(Mutex::new(Vec::new())),
             middlewares: Arc::new(Mutex::new(Vec::new())),
+            visibility: Arc::new(Mutex::new(VisibilityFilter::new())),
             include_tags: Arc::new(Mutex::new(Vec::new())),
             exclude_tags: Arc::new(Mutex::new(Vec::new())),
             notification_sender: tx,
+            providers: Arc::new(Mutex::new(Vec::new())),
+            docket: Arc::new(crate::server::tasks::Docket::new()),
         }
     }
 
@@ -99,7 +112,7 @@ impl FastMCP {
         self.instructions = Some(instructions.to_string());
     }
 
-    /// Configures tag-based filtering for tools, resources, and prompts.
+    /// Configures legacy tag-based filtering for tools, resources, and prompts.
     pub fn set_filtering(&self, include: Vec<String>, exclude: Vec<String>) {
         {
             let mut guard = self.include_tags.lock().unwrap();
@@ -111,8 +124,52 @@ impl FastMCP {
         }
     }
 
-    fn should_include(&self, tags: &[String]) -> bool {
-        // Exclude precedence
+    /// Enable specific component keys and/or tags in the visibility filter.
+    ///
+    /// Pass `only = true` to hide everything not explicitly enabled.
+    pub fn enable_components(
+        &self,
+        keys: Option<HashSet<String>>,
+        tags: Option<HashSet<String>>,
+        only: bool,
+    ) {
+        let mut vf = self.visibility.lock().unwrap();
+        vf.enable(keys, tags, only);
+        let _ = self.send_notification("notifications/tools/list_changed", serde_json::json!({}));
+        let _ = self.send_notification(
+            "notifications/resources/list_changed",
+            serde_json::json!({}),
+        );
+        let _ =
+            self.send_notification("notifications/prompts/list_changed", serde_json::json!({}));
+    }
+
+    /// Disable specific component keys and/or tags in the visibility filter.
+    pub fn disable_components(
+        &self,
+        keys: Option<HashSet<String>>,
+        tags: Option<HashSet<String>>,
+    ) {
+        let mut vf = self.visibility.lock().unwrap();
+        vf.disable(keys, tags);
+        let _ = self.send_notification("notifications/tools/list_changed", serde_json::json!({}));
+        let _ = self.send_notification(
+            "notifications/resources/list_changed",
+            serde_json::json!({}),
+        );
+        let _ =
+            self.send_notification("notifications/prompts/list_changed", serde_json::json!({}));
+    }
+
+    fn should_include(&self, key: &str, tags: &[String]) -> bool {
+        let tag_set: HashSet<String> = tags.iter().cloned().collect();
+
+        // New visibility filter
+        if !self.visibility.lock().unwrap().is_enabled(key, &tag_set) {
+            return false;
+        }
+
+        // Legacy tag exclude
         {
             let exclude_guard = self.exclude_tags.lock().unwrap();
             for tag in tags {
@@ -122,7 +179,7 @@ impl FastMCP {
             }
         }
 
-        // Include logic
+        // Legacy tag include
         {
             let include_guard = self.include_tags.lock().unwrap();
             if !include_guard.is_empty() {
@@ -134,7 +191,6 @@ impl FastMCP {
                 return false;
             }
         }
-        // Default include if include list is empty (and not excluded)
         true
     }
 
@@ -196,12 +252,14 @@ impl FastMCP {
             "notifications/initialized" => Ok(JsonRpcResponse::new(id, Value::Null)),
             "ping" => Ok(JsonRpcResponse::new(id, Value::String("pong".to_string()))),
             "tools/list" => {
-                let tools = self.list_tools();
+                let mut tools = self.list_tools();
+                tools.extend(self.list_provider_tools().await);
+
                 let mcp_tools: Vec<McpTool> = tools
                     .into_iter()
                     .filter(|t| {
                         let tags: Vec<String> = t.tags.iter().cloned().collect();
-                        self.should_include(&tags)
+                        self.should_include(&t.name, &tags)
                     })
                     .map(|t| McpTool {
                         base_metadata: BaseMetadata {
@@ -246,7 +304,9 @@ impl FastMCP {
                 let resources = self.list_resources();
                 let filtered_resources: Vec<Resource> = resources
                     .into_iter()
-                    .filter(|r| self.should_include(r.tags.as_deref().unwrap_or(&[])))
+                    .filter(|r| {
+                        self.should_include(&r.uri, r.tags.as_deref().unwrap_or(&[]))
+                    })
                     .collect();
                 let result = serde_json::json!({
                     "resources": filtered_resources
@@ -286,10 +346,18 @@ impl FastMCP {
                 )?;
 
                 let context = Context::default();
-                let contents = self.resources.read_resource(uri, context).await?;
+                let resource_result = self.resources.read_resource(uri, context).await?;
+                // Convert typed ResourceResult to wire-protocol Vec<ResourceContents>
+                // and inject the request URI into each entry.
+                let mut wire: Vec<crate::mcp::types::ResourceContents> = resource_result.into();
+                for entry in &mut wire {
+                    if entry.uri.is_empty() {
+                        entry.uri = uri.to_string();
+                    }
+                }
 
                 let result = serde_json::json!({
-                    "contents": contents
+                    "contents": wire
                 });
                 Ok(JsonRpcResponse::new(id, result))
             }
@@ -299,7 +367,7 @@ impl FastMCP {
                     .into_iter()
                     .filter(|p| {
                         let tags: Vec<String> = p.tags.iter().cloned().collect();
-                        self.should_include(&tags)
+                        self.should_include(&p.name, &tags)
                     })
                     .map(|p| McpPrompt {
                         description: p.description,
@@ -343,12 +411,20 @@ impl FastMCP {
                     None
                 };
 
-                let (description, messages) =
+                let prompt_result =
                     self.prompts.get_prompt_execution(name, arguments).await?;
+
+                let description = prompt_result.description.clone();
+                // Convert typed Message list → wire PromptMessage list
+                let wire_messages: Vec<crate::prompts::prompt::PromptMessage> = prompt_result
+                    .messages
+                    .into_iter()
+                    .map(Into::into)
+                    .collect();
 
                 let result = serde_json::json!({
                     "description": description,
-                    "messages": messages
+                    "messages": wire_messages
                 });
                 Ok(JsonRpcResponse::new(id, result))
             }
@@ -378,12 +454,24 @@ impl FastMCP {
         let _ = self.send_notification("notifications/tools/list_changed", serde_json::json!({}));
     }
 
-    /// Returns all registered tools.
+    /// Returns all registered tools, including those from mounted providers.
     pub fn list_tools(&self) -> Vec<Tool> {
         self.tools.list_tools()
     }
 
-    /// Looks up a tool by name.
+    /// Returns tools from all mounted providers (does not include local tools).
+    pub async fn list_provider_tools(&self) -> Vec<Tool> {
+        let providers = self.providers.lock().unwrap().clone();
+        let mut all = Vec::new();
+        for p in providers {
+            if let Ok(tools) = p.list_tools().await {
+                all.extend(tools);
+            }
+        }
+        all
+    }
+
+    /// Looks up a tool by name (local first, then providers).
     pub fn get_tool(&self, name: &str) -> Option<Tool> {
         self.tools.get_tool(name)
     }
@@ -391,6 +479,55 @@ impl FastMCP {
     /// Returns the number of times a tool has been called.
     pub fn get_tool_usage(&self, name: &str) -> Option<usize> {
         self.tools.get_usage(name)
+    }
+
+    /// Schedule a tool call as a background task via the [`Docket`].
+    ///
+    /// Middleware runs synchronously before the task is submitted, so auth and
+    /// rate-limiting checks happen before any queue slot is consumed.
+    pub async fn call_tool_background(
+        &self,
+        name: &str,
+        arguments: Value,
+        mut task_meta: crate::server::tasks::TaskMeta,
+    ) -> Result<crate::server::tasks::CreateTaskResult, FastMCPError> {
+        let tool = self
+            .tools
+            .get_tool(name)
+            .ok_or_else(|| FastMCPError::InvalidRequest(format!("Tool not found: {}", name)))?;
+
+        // Enrich fn_key
+        let fn_key = format!("tool:{}", name);
+        task_meta.fn_key = Some(fn_key.clone());
+
+        let tools = self.tools.clone();
+        let tool_name = name.to_string();
+        let executor: crate::server::tasks::TaskExecutor =
+            Arc::new(move |args| {
+                let tools = tools.clone();
+                let name = tool_name.clone();
+                Box::pin(async move {
+                    let ctx = Context::default();
+                    let result = tools
+                        .call_tool(&name, args, ctx)
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    serde_json::to_value(result).map_err(|e| e.to_string())
+                })
+            });
+
+        let _ = tool; // ensure lookup happened before submission
+        let task_id = self
+            .docket
+            .submit(fn_key, arguments, task_meta.ttl, executor)
+            .await?;
+
+        Ok(crate::server::tasks::CreateTaskResult { task_id })
+    }
+
+    /// Returns the Docket handle for direct task-status queries.
+    pub fn docket(&self) -> &Arc<crate::server::tasks::Docket> {
+        &self.docket
     }
 
     // --- Resources ---
@@ -448,6 +585,42 @@ impl FastMCP {
     /// Returns the number of times a resource has been read.
     pub fn get_resource_usage(&self, uri: &str) -> Option<usize> {
         self.resources.get_usage(uri)
+    }
+
+    /// Returns all registered URI templates.
+    pub fn list_resource_templates(&self) -> Vec<ResourceTemplate> {
+        self.resources.list_templates()
+    }
+
+    // --- Provider Composition ---
+
+    /// Register an arbitrary `Provider` (tool/resource/prompt source).
+    pub fn add_provider(&self, provider: Arc<dyn Provider>) {
+        let mut guard = self.providers.lock().unwrap();
+        guard.push(provider);
+    }
+
+    /// Mount `child` under `namespace` using the provider composition system.
+    ///
+    /// Tools/prompts will be available as `{namespace}_{original_name}`;
+    /// resource URIs will have the namespace injected as a path segment.
+    pub fn mount(&self, child: Arc<FastMCP>, namespace: &str) -> Result<(), FastMCPError> {
+        use crate::server::providers::{FastMCPProvider, TransformingProvider};
+        let raw = FastMCPProvider::new(child);
+        let transformed = TransformingProvider::new(
+            Box::new(raw),
+            Some(namespace.to_string()),
+            HashMap::new(),
+        );
+        self.add_provider(Arc::new(transformed));
+        let _ = self.send_notification("notifications/tools/list_changed", serde_json::json!({}));
+        let _ = self.send_notification(
+            "notifications/resources/list_changed",
+            serde_json::json!({}),
+        );
+        let _ =
+            self.send_notification("notifications/prompts/list_changed", serde_json::json!({}));
+        Ok(())
     }
 
     // --- Prompts ---
@@ -617,9 +790,28 @@ impl FastMCPServer {
         self.0.send_notification(method, params)
     }
 
-    /// Configures tag-based filtering.
+    /// Configures legacy tag-based filtering.
     pub fn set_filtering(&self, include: Vec<String>, exclude: Vec<String>) {
         self.0.set_filtering(include, exclude);
+    }
+
+    /// Enable specific component keys/tags in the visibility filter.
+    pub fn enable_components(
+        &self,
+        keys: Option<HashSet<String>>,
+        tags: Option<HashSet<String>>,
+        only: bool,
+    ) {
+        self.0.enable_components(keys, tags, only);
+    }
+
+    /// Disable specific component keys/tags in the visibility filter.
+    pub fn disable_components(
+        &self,
+        keys: Option<HashSet<String>>,
+        tags: Option<HashSet<String>>,
+    ) {
+        self.0.disable_components(keys, tags);
     }
 
     // Delegate methods
@@ -847,12 +1039,14 @@ mod tests {
             description: None,
             arguments: None,
             fn_handler: Arc::new(Box::new(|_| {
-                Box::pin(async { Ok(vec![]) })
+                Box::pin(async {
+                    Ok(crate::prompts::types::PromptResult::new(vec![]))
+                })
                     as std::pin::Pin<
                         Box<
                             dyn std::future::Future<
                                     Output = Result<
-                                        Vec<crate::prompts::prompt::PromptMessage>,
+                                        crate::prompts::types::PromptResult,
                                         crate::error::FastMCPError,
                                     >,
                                 > + Send,
@@ -967,22 +1161,20 @@ mod tests {
 
     #[tokio::test]
     async fn test_resource_read() {
-        use crate::mcp::types::ResourceContents;
+        use crate::resources::types::ResourceResult;
         use std::future::Future;
         use std::pin::Pin;
 
         let server = FastMCP::new("test", "1.0");
 
-        let handler = Arc::new(Box::new(|_uri, _ctx| {
+        let handler = Arc::new(Box::new(|_uri: String, _ctx| {
             Box::pin(async {
-                Ok(vec![ResourceContents {
-                    uri: "file:///test".to_string(),
-                    mime_type: Some("text/plain".to_string()),
-                    text: Some("Hello World".to_string()),
-                    blob: None,
-                }])
+                Ok(ResourceResult::from_text(
+                    "Hello World".to_string(),
+                    Some("text/plain".to_string()),
+                ))
             })
-                as Pin<Box<dyn Future<Output = Result<Vec<ResourceContents>, FastMCPError>> + Send>>
+                as Pin<Box<dyn Future<Output = Result<ResourceResult, FastMCPError>> + Send>>
         }) as crate::resources::manager::ResourceReadHandler);
 
         let resource = Resource {
@@ -1021,7 +1213,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_prompt_execution() {
-        use crate::prompts::prompt::{Prompt as PromptComponent, PromptFunction, PromptMessage};
+        use crate::prompts::prompt::{Prompt as PromptComponent, PromptFunction};
+        use crate::prompts::types::{Message, PromptResult};
         use std::future::Future;
         use std::pin::Pin;
 
@@ -1029,18 +1222,11 @@ mod tests {
 
         let handler = Arc::new(Box::new(|_args| {
             Box::pin(async {
-                Ok(vec![PromptMessage {
-                    role: "user".to_string(),
-                    content: crate::mcp::types::ContentBlock::Text(
-                        crate::mcp::types::TextContent {
-                            text: "Hello Prompt".to_string(),
-                            type_: "text".to_string(),
-                            annotations: None,
-                        },
-                    ),
-                }])
+                Ok(PromptResult::new(vec![Message::user(
+                    "Hello Prompt".to_string(),
+                )]))
             })
-                as Pin<Box<dyn Future<Output = Result<Vec<PromptMessage>, FastMCPError>> + Send>>
+                as Pin<Box<dyn Future<Output = Result<PromptResult, FastMCPError>> + Send>>
         }) as crate::prompts::prompt::PromptHandler);
 
         let prompt = PromptComponent {

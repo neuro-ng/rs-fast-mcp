@@ -1,5 +1,6 @@
 use rs_fast_mcp::error::FastMCPError;
-use rs_fast_mcp::mcp::types::{BaseMetadata, Resource, ResourceContents};
+use rs_fast_mcp::mcp::types::{BaseMetadata, Resource};
+use rs_fast_mcp::resources::types::ResourceResult;
 use rs_fast_mcp::server::core::FastMCPServer;
 use rs_fast_mcp::server::transport::Transport;
 use rs_fast_mcp::server::transport::stdio::StdioTransport;
@@ -97,16 +98,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Box::pin(async move {
                     let guard = store.lock().unwrap();
                     let json_str = serde_json::to_string_pretty(&*guard).unwrap();
-                    Ok(vec![ResourceContents {
-                        uri: "config://settings".to_string(),
-                        mime_type: Some("application/json".to_string()),
-                        text: Some(json_str),
-                        blob: None,
-                    }])
+                    Ok(ResourceResult::from_text(
+                        json_str,
+                        Some("application/json".to_string()),
+                    ))
                 })
                     as Pin<
                         Box<
-                            dyn Future<Output = Result<Vec<ResourceContents>, FastMCPError>> + Send,
+                            dyn Future<Output = Result<ResourceResult, FastMCPError>> + Send,
                         >,
                     >
             }))),
@@ -164,16 +163,14 @@ mod tests {
                     Box::pin(async move {
                         let guard = store.lock().unwrap();
                         let json_str = serde_json::to_string_pretty(&*guard).unwrap();
-                        Ok(vec![ResourceContents {
-                            uri: "config://settings".to_string(),
-                            mime_type: Some("application/json".to_string()),
-                            text: Some(json_str),
-                            blob: None,
-                        }])
+                        Ok(ResourceResult::from_text(
+                            json_str,
+                            Some("application/json".to_string()),
+                        ))
                     })
                         as Pin<
                             Box<
-                                dyn Future<Output = Result<Vec<ResourceContents>, FastMCPError>>
+                                dyn Future<Output = Result<ResourceResult, FastMCPError>>
                                     + Send,
                             >,
                         >

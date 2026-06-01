@@ -9,6 +9,8 @@ use tokio::sync::oneshot;
 use tracing::{debug, error, warn};
 
 pub mod builder;
+pub mod extensions;
+pub mod sampling;
 
 pub mod transport;
 pub use crate::client::transport::ClientTransport;
@@ -263,6 +265,14 @@ impl Client {
             },
             Err(e) => Err(e),
         }
+    }
+
+    /// Send a JSON-RPC notification to the server (no response expected).
+    pub async fn send_notification(
+        &self,
+        message: crate::mcp::types::JsonRpcMessage,
+    ) -> Result<(), FastMCPError> {
+        self.transport.send(message).await
     }
 
     pub async fn list_tools(&self) -> Result<Vec<crate::mcp::types::Tool>, FastMCPError> {

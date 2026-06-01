@@ -74,12 +74,17 @@ async fn test_resource_stats() {
 
     // We need a handler for read to succeed
     let handler = Arc::new(Box::new(|_, _| {
-        Box::pin(async { Ok(vec![]) })
+        Box::pin(async {
+            Ok(rs_fast_mcp::resources::types::ResourceResult::from_text(
+                String::new(),
+                None,
+            ))
+        })
             as std::pin::Pin<
                 Box<
                     dyn std::future::Future<
                             Output = Result<
-                                Vec<rs_fast_mcp::mcp::types::ResourceContents>,
+                                rs_fast_mcp::resources::types::ResourceResult,
                                 rs_fast_mcp::error::FastMCPError,
                             >,
                         > + Send,

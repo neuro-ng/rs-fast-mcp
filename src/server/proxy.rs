@@ -92,21 +92,46 @@ impl MountedServer {
                 let messages_val = result.get("messages").ok_or(FastMCPError::InvalidRequest(
                     "Missing messages in prompt result".to_string(),
                 ))?;
+                let description = result
+                    .get("description")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string);
 
-                let messages: Vec<crate::prompts::prompt::PromptMessage> =
+                // Deserialise wire PromptMessages, then rewrap as typed PromptResult
+                let wire_messages: Vec<crate::prompts::prompt::PromptMessage> =
                     serde_json::from_value(messages_val.clone()).map_err(|e| {
                         FastMCPError::InvalidRequest(format!(
                             "Failed to deserialize messages: {}. Value: {}",
                             e, messages_val
                         ))
                     })?;
-                Ok(messages)
+
+                let messages: Vec<crate::prompts::types::Message> = wire_messages
+                    .into_iter()
+                    .map(|pm| {
+                        let role = if pm.role == "assistant" {
+                            crate::prompts::types::MessageRole::Assistant
+                        } else {
+                            crate::prompts::types::MessageRole::User
+                        };
+                        crate::prompts::types::Message {
+                            role,
+                            content: crate::prompts::types::MessageContent::ContentBlock(
+                                pm.content,
+                            ),
+                        }
+                    })
+                    .collect();
+
+                let mut prompt_result = crate::prompts::types::PromptResult::new(messages);
+                prompt_result.description = description;
+                Ok(prompt_result)
             })
                 as std::pin::Pin<
                     Box<
                         dyn std::future::Future<
                                 Output = Result<
-                                    Vec<crate::prompts::prompt::PromptMessage>,
+                                    crate::prompts::types::PromptResult,
                                     FastMCPError,
                                 >,
                             > + Send,
@@ -196,12 +221,40 @@ impl MountedServer {
         let handler: Arc<crate::resources::manager::ResourceReadHandler> = Arc::new(Box::new(
             move |uri: String, _ctx: crate::server::context::Context| {
                 let client = client.clone();
-                Box::pin(async move { client.read_resource(&uri).await })
+                Box::pin(async move {
+                    let wire = client.read_resource(&uri).await?;
+                    // Convert wire Vec<ResourceContents> → typed ResourceResult
+                    let contents = wire
+                        .into_iter()
+                        .map(|rc| {
+                            if let Some(blob) = rc.blob {
+                                let data = base64::Engine::decode(
+                                    &base64::engine::general_purpose::STANDARD,
+                                    blob,
+                                )
+                                .unwrap_or_default();
+                                crate::resources::types::ResourceContent::binary(
+                                    data,
+                                    rc.mime_type,
+                                )
+                            } else {
+                                crate::resources::types::ResourceContent::text(
+                                    rc.text.unwrap_or_default(),
+                                    rc.mime_type,
+                                )
+                            }
+                        })
+                        .collect();
+                    Ok(crate::resources::types::ResourceResult {
+                        contents,
+                        meta: None,
+                    })
+                })
                     as std::pin::Pin<
                         Box<
                             dyn std::future::Future<
                                     Output = Result<
-                                        Vec<crate::mcp::types::ResourceContents>,
+                                        crate::resources::types::ResourceResult,
                                         FastMCPError,
                                     >,
                                 > + Send,

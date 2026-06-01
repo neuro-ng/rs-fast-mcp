@@ -141,14 +141,11 @@ pub async fn run(
                                     let p = file_path.clone();
                                     Box::pin(async move {
                                         match tokio::fs::read_to_string(&p).await {
-                                            Ok(content) => {
-                                                Ok(vec![crate::mcp::types::ResourceContents {
-                                                    uri: _uri,
-                                                    mime_type: None,
-                                                    text: Some(content),
-                                                    blob: None,
-                                                }])
-                                            }
+                                            Ok(content) => Ok(
+                                                crate::resources::types::ResourceResult::from_text(
+                                                    content, None,
+                                                ),
+                                            ),
                                             Err(e) => Err(crate::error::FastMCPError::Resource(
                                                 crate::error::ErrorData {
                                                     code: Some(1),
@@ -162,9 +159,7 @@ pub async fn run(
                                             Box<
                                                 dyn std::future::Future<
                                                         Output = Result<
-                                                            Vec<
-                                                                crate::mcp::types::ResourceContents,
-                                                            >,
+                                                            crate::resources::types::ResourceResult,
                                                             crate::error::FastMCPError,
                                                         >,
                                                     > + Send,
@@ -193,22 +188,17 @@ pub async fn run(
                                 icons: None,
                             };
                             let text_content = content.clone();
-                            let handler = Box::new(move |uri: String, _| {
+                            let handler = Box::new(move |_uri: String, _: crate::server::context::Context| {
                                 let t = text_content.clone();
                                 let m = mime_type.clone();
                                 Box::pin(async move {
-                                    Ok(vec![crate::mcp::types::ResourceContents {
-                                        uri,
-                                        mime_type: m,
-                                        text: Some(t),
-                                        blob: None,
-                                    }])
+                                    Ok(crate::resources::types::ResourceResult::from_text(t, m))
                                 })
                                     as std::pin::Pin<
                                         Box<
                                             dyn std::future::Future<
                                                     Output = Result<
-                                                        Vec<crate::mcp::types::ResourceContents>,
+                                                        crate::resources::types::ResourceResult,
                                                         crate::error::FastMCPError,
                                                     >,
                                                 > + Send,

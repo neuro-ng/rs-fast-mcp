@@ -1,5 +1,6 @@
 use crate::error::FastMCPError;
-use crate::mcp::types::{Resource, ResourceContents};
+use crate::mcp::types::Resource;
+use crate::resources::types::ResourceResult;
 use crate::server::context::Context;
 use dashmap::DashMap;
 use std::future::Future;
@@ -13,7 +14,7 @@ pub type ResourceReadHandler = Box<
             String,
             Context,
         )
-            -> Pin<Box<dyn Future<Output = Result<Vec<ResourceContents>, FastMCPError>> + Send>>
+            -> Pin<Box<dyn Future<Output = Result<ResourceResult, FastMCPError>> + Send>>
         + Send
         + Sync,
 >;
@@ -192,7 +193,7 @@ impl ResourceManager {
         &self,
         uri: &str,
         context: Context,
-    ) -> Result<Vec<ResourceContents>, FastMCPError> {
+    ) -> Result<ResourceResult, FastMCPError> {
         // Validation: Check valid URI
         if let Err(e) = url::Url::parse(uri) {
             return Err(FastMCPError::InvalidRequest(format!("Invalid URI: {}", e)));
@@ -294,6 +295,37 @@ mod tests {
         let r = mgr.get_resource("file:///a.txt");
         assert!(r.is_some());
         assert_eq!(r.unwrap().uri, "file:///a.txt");
+    }
+
+    #[tokio::test]
+    async fn test_read_resource_returns_resource_result() {
+        use crate::resources::types::{ResourceContent, ResourceResult};
+        use crate::server::context::Context;
+        use std::future::Future;
+        use std::pin::Pin;
+
+        let mgr = ResourceManager::new();
+        let handler = Arc::new(Box::new(|_uri: String, _ctx: Context| {
+            Box::pin(async {
+                Ok(ResourceResult::from_text(
+                    "hello".to_string(),
+                    Some("text/plain".to_string()),
+                ))
+            })
+                as Pin<Box<dyn Future<Output = Result<ResourceResult, FastMCPError>> + Send>>
+        }) as ResourceReadHandler);
+
+        mgr.register(make_resource("file:///rr", "rr"), Some(handler))
+            .unwrap();
+        let result = mgr
+            .read_resource("file:///rr", Context::default())
+            .await
+            .unwrap();
+        assert_eq!(result.contents.len(), 1);
+        assert!(matches!(
+            &result.contents[0].content,
+            crate::resources::types::ResourceData::Text(t) if t == "hello"
+        ));
     }
 
     #[test]

@@ -1,4 +1,5 @@
 use crate::error::FastMCPError;
+use crate::prompts::types::PromptResult;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -6,7 +7,10 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
-/// A single message in a prompt response.
+/// A single wire-protocol prompt message (role + content block).
+///
+/// Used for JSON-RPC serialisation. For new handlers prefer the typed
+/// [`Message`](crate::prompts::types::Message) / [`PromptResult`] API.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PromptMessage {
     /// The role of the message author (e.g. `"user"`, `"assistant"`).
@@ -31,7 +35,7 @@ pub type PromptHandler = Box<
     dyn Fn(
             HashMap<String, Value>,
         )
-            -> Pin<Box<dyn Future<Output = Result<Vec<PromptMessage>, FastMCPError>> + Send>>
+            -> Pin<Box<dyn Future<Output = Result<PromptResult, FastMCPError>> + Send>>
         + Send
         + Sync,
 >;

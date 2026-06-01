@@ -17,6 +17,7 @@ use std::sync::Arc;
 pub mod oauth;
 pub mod oidc;
 pub mod providers;
+pub mod proxy;
 
 /// Context information derived from authentication.
 #[derive(Debug, Clone, Default)]

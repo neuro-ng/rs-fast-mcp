@@ -8,6 +8,7 @@
 //! - [`stdio`] — Reads JSON-RPC messages from stdin, writes responses to stdout.
 //! - [`http`] — Actix-Web HTTP server with SSE session management.
 
+pub mod event_store;
 pub mod http;
 pub mod stdio;
 

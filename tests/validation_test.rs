@@ -123,7 +123,11 @@ async fn test_prompt_validation_missing_arg() {
                 description: None,
                 required: Some(true),
             }]),
-            fn_handler: Arc::new(Box::new(|_| Box::pin(async { Ok(vec![]) }))),
+            fn_handler: Arc::new(Box::new(|_| {
+                Box::pin(async {
+                    Ok(rs_fast_mcp::prompts::types::PromptResult::new(vec![]))
+                })
+            })),
         },
         enabled: true,
         key: None,

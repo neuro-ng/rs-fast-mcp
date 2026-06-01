@@ -1,6 +1,7 @@
 pub mod auth0;
 pub mod aws;
 pub mod azure;
+pub mod discord;
 pub mod github;
 pub mod google;
 pub mod oci;

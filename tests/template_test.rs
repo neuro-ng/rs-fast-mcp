@@ -25,18 +25,16 @@ async fn test_resource_template() {
         Box::new(|_, context: rs_fast_mcp::server::context::Context| {
             Box::pin(async move {
                 let path = context.arguments.get("path").cloned().unwrap_or_default();
-                Ok(vec![rs_fast_mcp::mcp::types::ResourceContents {
-                    uri: format!("file://{}", path),
-                    mime_type: Some("text/plain".to_string()),
-                    text: Some(format!("Content of {}", path)),
-                    blob: None,
-                }])
+                Ok(rs_fast_mcp::resources::types::ResourceResult::from_text(
+                    format!("Content of {}", path),
+                    Some("text/plain".to_string()),
+                ))
             })
                 as std::pin::Pin<
                     Box<
                         dyn std::future::Future<
                                 Output = Result<
-                                    Vec<rs_fast_mcp::mcp::types::ResourceContents>,
+                                    rs_fast_mcp::resources::types::ResourceResult,
                                     rs_fast_mcp::error::FastMCPError,
                                 >,
                             > + Send,
@@ -62,7 +60,8 @@ async fn test_resource_template() {
     println!("Result: {:?}", result);
 
     assert_eq!(result["contents"][0]["text"], "Content of foo/bar.txt");
-    assert_eq!(result["contents"][0]["uri"], "file://foo/bar.txt");
+    // URI is now injected from the request URI rather than constructed by the handler
+    assert_eq!(result["contents"][0]["uri"], "file:///foo/bar.txt");
 
     // Test templates/list
     let list_req = rs_fast_mcp::mcp::types::JsonRpcRequest {

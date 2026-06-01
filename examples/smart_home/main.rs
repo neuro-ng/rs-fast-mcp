@@ -1,5 +1,7 @@
-use rs_fast_mcp::mcp::types::{BaseMetadata, Resource, ResourceContents};
-use rs_fast_mcp::prompts::prompt::{Prompt, PromptFunction, PromptMessage};
+use rs_fast_mcp::mcp::types::{BaseMetadata, Resource};
+use rs_fast_mcp::prompts::prompt::{Prompt, PromptFunction};
+use rs_fast_mcp::prompts::types::{Message, PromptResult};
+use rs_fast_mcp::resources::types::ResourceResult;
 use rs_fast_mcp::server::core::FastMCPServer;
 use rs_fast_mcp::server::transport::Transport;
 use rs_fast_mcp::server::transport::stdio::StdioTransport;
@@ -86,23 +88,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     server
         .add_resource(
             resource_state,
-            Some(Arc::new(Box::new(move |uri, _| {
+            Some(Arc::new(Box::new(move |_uri, _| {
                 let s = state_clone.clone();
                 Box::pin(async move {
                     let data = s.lock().unwrap();
                     let json = serde_json::to_string_pretty(&*data).unwrap_or_default();
-                    Ok(vec![ResourceContents {
-                        uri,
-                        mime_type: Some("application/json".to_string()),
-                        text: Some(json),
-                        blob: None,
-                    }])
+                    Ok(ResourceResult::from_text(
+                        json,
+                        Some("application/json".to_string()),
+                    ))
                 })
                     as Pin<
                         Box<
                             dyn Future<
                                     Output = Result<
-                                        Vec<ResourceContents>,
+                                        ResourceResult,
                                         rs_fast_mcp::error::FastMCPError,
                                     >,
                                 > + Send,
@@ -133,19 +133,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         server
             .add_resource(
                 resource_room,
-                Some(Arc::new(Box::new(move |uri, _| {
+                Some(Arc::new(Box::new(move |_uri, _| {
                     let s = state_clone.clone();
                     let rid = r_id.clone();
                     Box::pin(async move {
                         let data = s.lock().unwrap();
                         if let Some(room) = data.rooms.get(&rid) {
                             let json = serde_json::to_string_pretty(room).unwrap_or_default();
-                            Ok(vec![ResourceContents {
-                                uri,
-                                mime_type: Some("application/json".to_string()),
-                                text: Some(json),
-                                blob: None,
-                            }])
+                            Ok(ResourceResult::from_text(
+                                json,
+                                Some("application/json".to_string()),
+                            ))
                         } else {
                             Err(rs_fast_mcp::error::FastMCPError::Resource(
                                 rs_fast_mcp::error::ErrorData {
@@ -160,7 +158,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             Box<
                                 dyn Future<
                                         Output = Result<
-                                            Vec<ResourceContents>,
+                                            ResourceResult,
                                             rs_fast_mcp::error::FastMCPError,
                                         >,
                                     > + Send,
@@ -348,22 +346,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             };
                             report.push_str(&format!("- {}: {}\n", name, status));
                         }
-                        Ok(vec![PromptMessage {
-                            role: "assistant".to_string(),
-                            content: rs_fast_mcp::mcp::types::ContentBlock::Text(
-                                rs_fast_mcp::mcp::types::TextContent {
-                                    type_: "text".to_string(),
-                                    text: report,
-                                    annotations: None,
-                                },
-                            ),
-                        }])
+                        Ok(PromptResult::new(vec![Message::assistant(report)]))
                     })
                         as Pin<
                             Box<
                                 dyn Future<
                                         Output = Result<
-                                            Vec<PromptMessage>,
+                                            PromptResult,
                                             rs_fast_mcp::error::FastMCPError,
                                         >,
                                     > + Send,

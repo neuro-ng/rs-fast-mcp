@@ -1,8 +1,10 @@
 use rs_fast_mcp::error::FastMCPError;
 // use rs_fast_mcp::mcp::types::ResourceTemplate;
-use rs_fast_mcp::mcp::types::{BaseMetadata, Resource, ResourceContents};
+use rs_fast_mcp::mcp::types::{BaseMetadata, Resource};
 use rs_fast_mcp::mcp::types::{ContentBlock, TextContent};
-use rs_fast_mcp::prompts::prompt::{Prompt, PromptArgument, PromptFunction, PromptMessage};
+use rs_fast_mcp::prompts::prompt::{Prompt, PromptArgument, PromptFunction};
+use rs_fast_mcp::prompts::types::{Message, PromptResult};
+use rs_fast_mcp::resources::types::ResourceResult;
 use rs_fast_mcp::server::core::FastMCPServer;
 use rs_fast_mcp::server::transport::Transport;
 use rs_fast_mcp::server::transport::stdio::StdioTransport;
@@ -74,18 +76,16 @@ fn create_server() -> FastMCPServer {
     server
         .add_resource(
             resource,
-            Some(Arc::new(Box::new(|uri, _ctx| {
+            Some(Arc::new(Box::new(|_uri, _ctx| {
                 Box::pin(async move {
-                    Ok(vec![ResourceContents {
-                        uri,
-                        mime_type: Some("text/plain".to_string()),
-                        text: Some("This is the FastMCP Testing Demo server".to_string()),
-                        blob: None,
-                    }])
+                    Ok(ResourceResult::from_text(
+                        "This is the FastMCP Testing Demo server".to_string(),
+                        Some("text/plain".to_string()),
+                    ))
                 })
                     as Pin<
                         Box<
-                            dyn Future<Output = Result<Vec<ResourceContents>, FastMCPError>> + Send,
+                            dyn Future<Output = Result<ResourceResult, FastMCPError>> + Send,
                         >,
                     >
             }))),
@@ -114,18 +114,15 @@ fn create_server() -> FastMCPServer {
                     let name = args
                         .get("name")
                         .and_then(|v| v.as_str())
-                        .unwrap_or("Friend");
-                    Ok(vec![PromptMessage {
-                        role: "user".to_string(),
-                        content: ContentBlock::Text(TextContent {
-                            type_: "text".to_string(),
-                            text: format!("Hello, {}!", name),
-                            annotations: None,
-                        }),
-                    }])
+                        .unwrap_or("Friend")
+                        .to_string();
+                    Ok(PromptResult::new(vec![Message::user(format!(
+                        "Hello, {}!",
+                        name
+                    ))]))
                 })
                     as Pin<
-                        Box<dyn Future<Output = Result<Vec<PromptMessage>, FastMCPError>> + Send>,
+                        Box<dyn Future<Output = Result<PromptResult, FastMCPError>> + Send>,
                     >
             })),
         },

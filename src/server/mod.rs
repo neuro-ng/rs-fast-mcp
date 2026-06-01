@@ -23,7 +23,10 @@ pub mod context;
 pub mod core;
 pub mod middleware;
 pub mod proxy;
+pub mod providers;
 pub mod strategy;
+pub mod tasks;
 pub mod transport;
+pub mod visibility;
 
 pub mod logging;
